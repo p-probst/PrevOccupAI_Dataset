@@ -27,7 +27,8 @@ from constants import VALID_ACTIVITIES, WALK, STAIRS, CABINETS, STAND,\
     SEGMENTED_DATA_FOLDER, SENSOR_COLS_JSON, LOADED_SENSORS_KEY
 from .segment_activities import segment_activities, crop_segments
 from .load_sensor_data import load_data_from_same_recording
-from .save import save_segmented_tasks, create_dir
+from .save import save_segmented_tasks
+from file_utils import create_dir
 
 
 # ------------------------------------------------------------------------------------------------------------------- #

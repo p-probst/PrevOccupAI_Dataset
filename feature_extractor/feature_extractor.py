@@ -13,7 +13,6 @@ load_json_file(...): Loads a json file.
 [Private]
 _validate_activity_input(...): Checks whether the provided activities are valid.
 _generate_outfolder(...): Generates the folders for storing the data.
-_remove_file_duplicates(...): Removes duplicate files in case the file is stored as both '.npy' and '.csv'.
 _load_sensor_names(...): Loads the sensor names from a json file containing it.
 _pre_process_sensors(...): Pre-processes the sensors contained in data_array according to their sensor type.
 _extract_features(...): Extracts features from the windowed data.
@@ -40,9 +39,10 @@ from constants import VALID_ACTIVITIES, \
     VALID_SENSORS, ACC, GYR, MAG, ROT, \
     SENSOR_COLS_JSON, LOADED_SENSORS_KEY, CLASS_INSTANCES_JSON, MAIN_LABEL_KEY, SUB_LABEL_KEY,\
     ACTIVITY_MAIN_SUB_CLASS, MAIN_CLASS_KEY
-from raw_data_processor import slerp_smoothing, pre_process_inertial_data, create_dir
+from raw_data_processor import slerp_smoothing, pre_process_inertial_data
 from .window import get_sliding_windows_indices, window_data, window_scaling
 from .quaternion_features import geodesic_distance
+from file_utils import remove_file_duplicates, create_dir, load_json_file
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -120,7 +120,7 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
     output_path = _generate_outfolder(features_data_path, window_scaler, window_size)
 
     # cycle over the subjects
-    for sub_num, subject in enumerate(['P001', 'P002']): # subject_folders
+    for sub_num, subject in enumerate(subject_folders): # subject_folders
         print("\n#----------------------------------------------------------------------#")
         print(f"# Extracting features for Subject {subject}")
 
@@ -147,7 +147,7 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
 
                 # remove duplicate files
                 # (e.g., 'walk_slow.npy' and walk_slow.csv'  --> keep only the file that has the default input type)
-                files = _remove_file_duplicates(files, default_input_file_type=default_input_file_type)
+                files = remove_file_duplicates(files, default_input_file_type=default_input_file_type)
 
                 # get the number of files
                 num_files = len(files)
@@ -308,22 +308,6 @@ def extract_quaternion_features(quat_windowed_data) -> pd.DataFrame:
     return pd.DataFrame(quat_features, columns=["quat_mean_dist", "quat_std_dist", "quat_total_dist"])
 
 
-def load_json_file(json_path: str) -> Dict[Any, Any]:
-    """
-    Loads a json file.
-    :param json_path: str
-        Path to the json file
-    :return: Dict[Any,Any]
-    Dictionary containing the features from TSFEL
-    """
-
-    # read json file to a features dict
-    with open(json_path, "r") as file:
-        json_dict = json.load(file)
-
-    return json_dict
-
-
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -371,32 +355,6 @@ def _generate_outfolder(features_data_path: str, window_scaler: str, window_size
     output_path = create_dir(features_data_path, os.path.join('extracted_features', folder_name))
 
     return output_path
-
-
-def _remove_file_duplicates(activity_files, default_input_file_type) -> List[str]:
-    """
-    Removes duplicate files in case the file is stored as both '.npy' and '.csv'. In this case only the files
-    corresponding to the default file type are kept.
-    :param activity_files: the files that were found
-    :param default_input_file_type: the default input file type.
-    :return: a list of the files to be loaded
-    """
-
-    # get the file types
-    file_types = list(set(os.path.splitext(file)[1] for file in activity_files))
-
-    # check if there were multiple file types found
-    # (e.g., segmented activities were stored as both .csv and .npy)
-    # in this case only consider the files that match the default input file type
-    if len(file_types) >= 2:
-        print(
-            f"Found more than one file type, for the activity to be loaded, in the folder. Found file types: {file_types}."
-            f"\nOnly considering \'{default_input_file_type}\' files.")
-
-        # get only the files that correspond to input file type
-        activity_files = [file for file in activity_files if default_input_file_type in file]
-
-    return activity_files
 
 
 def _load_sensor_names(data_file_path: str) -> List[str]:

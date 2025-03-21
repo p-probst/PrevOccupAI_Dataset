@@ -57,6 +57,8 @@ CLASS_SIT = 1
 CLASS_STAND = 2
 CLASS_WALK = 3
 
+MAIN_ACTIVITY_LABELS = [CLASS_SIT, CLASS_STAND, CLASS_WALK]
+
 # activity sub-classes
 CLASS_STAND_STILL = 4
 CLASS_STAND_TALK = 5
@@ -67,6 +69,10 @@ CLASS_WALK_MEDIUM = 9
 CLASS_WALK_FAST = 10
 CLASS_WALK_STAIRS_UP = 11
 CLASS_WALK_STAIRS_DOWN = 12
+
+SUB_ACTIVITIES_STAND_LABELS = [CLASS_STAND_STILL, CLASS_STAND_TALK, CLASS_STAND_COFFEE, CLASS_STAND_FOLDERS]
+SUB_ACTIVITIES_WALK_LABELS = [CLASS_WALK_SLOW, CLASS_WALK_MEDIUM, CLASS_WALK_FAST, CLASS_WALK_STAIRS_UP, CLASS_WALK_STAIRS_DOWN]
+
 
 MAIN_CLASS_KEY = 'main_class'
 ACTIVITY_MAIN_SUB_CLASS = \
@@ -99,3 +105,9 @@ CLASS_INSTANCES_JSON = 'class_instances.json'
 FEATURE_COLS_KEY = 'feature_cols'
 MAIN_LABEL_KEY = 'main_label'
 SUB_LABEL_KEY = 'sub_label'
+
+
+# ------------------------------------------------------------------------------------------------------------------- #
+# random seed
+# ------------------------------------------------------------------------------------------------------------------- #
+RANDOM_SEED = 42
