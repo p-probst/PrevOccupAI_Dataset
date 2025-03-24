@@ -39,8 +39,8 @@ SUB_CLASS_BALANCING = 'sub_classes'
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def load_features(feature_data_path: str, balance_data: str = None, default_input_file_type: str = NPY)\
-        -> Tuple[pd.DataFrame, pd.Series, pd.Series, pd.Series]:
+def load_features(feature_data_path: str, balance_data: str = None, default_input_file_type: str = NPY,
+                  random_state: int = None) -> Tuple[pd.DataFrame, pd.Series, pd.Series, pd.Series]:
     """
     Loads the extracted features from all the subjects. The function allows for balancing the data so that there is
     the same amount of instances for all subjects, thus avoiding data bias towards a specific class or subject.
@@ -54,6 +54,9 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
     :param default_input_file_type: The default input type that should be used. This is used to make sure that only one
                                     file is loaded in case the feature data has been stored as both '.npy' and '.csv'.
                                     It can be either '.csv' or '.npy'. Default: '.npy'
+    :param random_state: Sets a seed to always return the same balancing. Only needed when data balancing is applied.
+                         When the random seed is set before using the function using np.random.seed() then setting it
+                         in this function is not necessary anymore.
     :return: The features for all subjects as pandas.DataFrame, the main class labels as pandas.Series,
              the sub-class labels as pandas.Series, the subject IDs for each instance as pandas.Series
 
@@ -61,8 +64,8 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
     # set the random seed
     # this is done as the datasets are balanced by randomly picking (without replacement) the needed amount of instances
     # from each class
-    if balance_data:
-        np.random.seed(RANDOM_SEED)
+    if random_state:
+        np.random.seed(random_state)
 
     # check input for balanced_data
     if balance_data and balance_data not in [MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING]:
