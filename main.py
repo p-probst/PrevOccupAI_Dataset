@@ -122,7 +122,7 @@ if __name__ == '__main__':
             print(f'Best accuracy (inner fold avg.): {grid_search.best_score_ * 100:.2f} %')
             print(f'best params: {grid_search.best_params_}')
 
-            # # get the selected features
+            # # get the selected features (test)
             # selected_features = X_train.columns[grid_search.best_estimator_.named_steps['feature_selection'].support_].tolist()
             # print(f'selected features: {selected_features}')
 
