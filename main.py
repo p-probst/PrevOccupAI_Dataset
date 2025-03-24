@@ -2,18 +2,14 @@
 # imports
 # ------------------------------------------------------------------------------------------------------------------- #
 import os
-from sklearn.model_selection import GroupShuffleSplit, GroupKFold, GridSearchCV
-from sklearn.feature_selection import RFE, SequentialFeatureSelector
-from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
-
 
 # internal imports
 from constants import VALID_SENSORS, SEGMENTED_DATA_FOLDER, EXTRACTED_FEATRES_FOLDER, RANDOM_SEED
 from raw_data_processor import generate_segmented_dataset
 from feature_extractor import extract_features
-from HAR import load_features, remove_low_variance, remove_highly_correlated_features, select_k_best_features
+from HAR import load_features, remove_low_variance, remove_highly_correlated_features, select_k_best_features, nested_cross_val
 import numpy as np
 
 
@@ -88,58 +84,66 @@ if __name__ == '__main__':
                          "n_estimators": [50, 100],
                          "max_depth": [2, 4, 6]}
 
+        print('### ----------------------------------------- ###')
+        print('Algorithm: Random Forest')
+
+        info_df = nested_cross_val(X_train, y_main_train, subject_ids_train, estimator=random_forest, param_grid=param_grid_rf)
+
+
+
+
+
+
+
         # setup cross-validation
-        inner_cv = GroupKFold(n_splits=2)
+        # inner_cv = GroupKFold(n_splits=2)
 
         # adding model specific feature selector on inner cv
-        #feature_selector = RFE(estimator=random_forest, step=1, n_features_to_select=10, verbose=1)
+        # feature_selector = RFE(estimator=random_forest, step=1, n_features_to_select=10, verbose=1)
         # feature_selector = SequentialFeatureSelector(estimator=random_forest, n_features_to_select='auto',
         #                                              direction='forward', cv=inner_cv)
         # pipeline = Pipeline([('feature_selection', feature_selector), ('classifier', random_forest)])
 
-        # inner grid-search
-        grid_search = GridSearchCV(estimator=random_forest, param_grid=param_grid_rf,
-                                   scoring='accuracy', n_jobs=-1, cv=inner_cv,
-                                   verbose=1, refit=True)
+        # # inner grid-search
+        # grid_search = GridSearchCV(estimator=random_forest, param_grid=param_grid_rf,
+        #                            scoring='accuracy', n_jobs=-1, cv=inner_cv,
+        #                            verbose=1, refit=True)
+        #
+        # # list for holding the outer scores
+        # outer_scores = []
+        #
+        # # setup cross-validation for outer model comparison
+        # outer_cv = GroupKFold(n_splits=5)
 
-        # list for holding the outer scores
-        outer_scores = []
-
-        # setup cross-validation for outer model comparison
-        outer_cv = GroupKFold(n_splits=5)
-
-        print('### ----------------------------------------- ###')
-        print('Algorithm: Random Forest')
-
-        # run outer loop
-        for outer_train_idx, valid_idx in outer_cv.split(X_train, y_main_train, groups=subject_ids_train):
-
-            # run inner loop for hyperparameter optimization
-            grid_search.fit(X_train.iloc[outer_train_idx], y_main_train.iloc[outer_train_idx], groups=subject_ids_train.iloc[outer_train_idx])
-
-            # print the best estimator and its accuracies
-            print('\n-------------------------')
-            print(f'Best accuracy (inner fold avg.): {grid_search.best_score_ * 100:.2f} %')
-            print(f'best params: {grid_search.best_params_}')
-
-            # # get the selected features (test)
-            # selected_features = X_train.columns[grid_search.best_estimator_.named_steps['feature_selection'].support_].tolist()
-            # print(f'selected features: {selected_features}')
-
-            # test the best estimator on the validation set of the current fold
-            y_pred = grid_search.best_estimator_.predict(X_train.iloc[valid_idx])
-            fold_score = accuracy_score(y_main_train.iloc[valid_idx], y_pred)
-            print(f'--> fold accuracy: {fold_score * 100:.2f} %')
-
-            # append outer score
-            outer_scores.append(fold_score)
-
-        # calculate average accuracy over all folds for the model
-        avg_score = np.mean(outer_scores) * 100
-        std_score = np.std(outer_scores) * 100
-
-        print(f'\naverage score over all folds: {avg_score:.2f} +/- {std_score:.2f}')
-        print('### ----------------------------------------- ###')
+        # # run outer loop
+        # for outer_train_idx, valid_idx in outer_cv.split(X_train, y_main_train, groups=subject_ids_train):
+        #
+        #     # run inner loop for hyperparameter optimization
+        #     grid_search.fit(X_train.iloc[outer_train_idx], y_main_train.iloc[outer_train_idx], groups=subject_ids_train.iloc[outer_train_idx])
+        #
+        #     # print the best estimator and its accuracies
+        #     print('\n-------------------------')
+        #     print(f'Best accuracy (inner fold avg.): {grid_search.best_score_ * 100:.2f} %')
+        #     print(f'best params: {grid_search.best_params_}')
+        #
+        #     # # get the selected features (test)
+        #     # selected_features = X_train.columns[grid_search.best_estimator_.named_steps['feature_selection'].support_].tolist()
+        #     # print(f'selected features: {selected_features}')
+        #
+        #     # test the best estimator on the validation set of the current fold
+        #     y_pred = grid_search.best_estimator_.predict(X_train.iloc[valid_idx])
+        #     fold_score = accuracy_score(y_main_train.iloc[valid_idx], y_pred)
+        #     print(f'--> fold accuracy: {fold_score * 100:.2f} %')
+        #
+        #     # append outer score
+        #     outer_scores.append(fold_score)
+        #
+        # # calculate average accuracy over all folds for the model
+        # avg_score = np.mean(outer_scores) * 100
+        # std_score = np.std(outer_scores) * 100
+        #
+        # print(f'\naverage score over all folds: {avg_score:.2f} +/- {std_score:.2f}')
+        # print('### ----------------------------------------- ###')
 
 
 
