@@ -53,7 +53,7 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
                                n_jobs=-1, cv=inner_cv, verbose=1, refit=True)
 
     # run outer loop
-    for fold_num, (train_idx, valid_idx) in enumerate(outer_cv.split(X, y, groups=subject_ids)):
+    for fold_num, (train_idx, valid_idx) in enumerate(outer_cv.split(X, y, groups=subject_ids), start=1):
 
         # get the corresponding X, y, and subject
         X_train = X.iloc[train_idx]
@@ -84,7 +84,10 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
 
         # append fold score
         fold_scores.append(fold_acc)
-        fold_info.append(best_params.update({'inner_acc': inner_acc, 'fold_acc': fold_acc}))
+
+        # append the info for the fold
+        best_params.update({'inner_acc': inner_acc, 'fold_acc': fold_acc})
+        fold_info.append(best_params)
 
     # calculate the average accuracy over all outer folds
     outer_fold_avg_acc = np.mean(fold_scores) * 100
@@ -98,6 +101,7 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
     info_df = pd.DataFrame(fold_info)
 
     # add the average score
+    # (adding here to not have it to re-calculate again. The entire column thus has the same value)
     info_df['estimator_avg_acc'] = outer_fold_avg_acc
     info_df['estimator_std_acc'] = outer_fold_std
 

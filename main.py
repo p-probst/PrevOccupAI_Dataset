@@ -4,6 +4,10 @@
 import os
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 # internal imports
 from constants import VALID_SENSORS, SEGMENTED_DATA_FOLDER, EXTRACTED_FEATRES_FOLDER, RANDOM_SEED
@@ -79,15 +83,23 @@ if __name__ == '__main__':
         X_train, X_test = select_k_best_features(X_train, X_test, y_main_train, k=10)
 
         # setup the models to be used
-        random_forest = RandomForestClassifier()
-        param_grid_rf = {"criterion": ['gini', 'entropy'],
-                         "n_estimators": [50, 100],
-                         "max_depth": [2, 4, 6]}
 
-        print('### ----------------------------------------- ###')
-        print('Algorithm: Random Forest')
+        # dict storing all different models
+        model_dict = {
 
-        info_df = nested_cross_val(X_train, y_main_train, subject_ids_train, estimator=random_forest, param_grid=param_grid_rf)
+            "SVM": {"estimator": Pipeline([('std', StandardScaler()), ('SVM', SVC())]), "param_grid": [{'SVM_kernel': ['rbf'],'SVM__C': np.power(10., np.arange(-4, 4)),'SVM__gamma': np.power(10., np.arange(-5, 0))},{'SVM__kernel': ['linear'], 'SVM__C': np.power(10., np.arange(-4, 4))}]},
+            "Random Forest": {"estimator": RandomForestClassifier(), "param_grid": [{"criterion": ['gini', 'entropy'], "n_estimators": [50, 100], "max_depth": [2, 4, 6]}]},
+        }
+
+        for model_name, param_dict in model_dict.items():
+            print('### ----------------------------------------- ###')
+            print(f'Algorithm: {model_name}')
+
+            # get the estimator and the param grid
+            est = param_dict['estimator']
+            param_grid_est = param_dict['param_grid']
+
+            info_df = nested_cross_val(X_train, y_main_train, subject_ids_train, estimator=est, param_grid=param_grid_est)
 
 
 
