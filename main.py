@@ -21,14 +21,14 @@ import numpy as np
 # constants
 # ------------------------------------------------------------------------------------------------------------------- #
 GENERATE_SEGMENTED_DATASET = False
-EXTRACT_FEATURES = False
+EXTRACT_FEATURES = True
 ML_HAR = True
 ML_MODEL_SELECTION = True
 ML_TRAIN_PRODUCTION_MODEL = False
 
 # definition of folder_path
-RAW_DATA_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
-OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\'
+RAW_DATA_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
+OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here
@@ -49,25 +49,29 @@ if __name__ == '__main__':
         segmented_data_path = os.path.join(OUTPUT_FOLDER_PATH, SEGMENTED_DATA_FOLDER)
 
         # extract features and save them to individual subject files
-        extract_features(segmented_data_path, OUTPUT_FOLDER_PATH, window_scaler=None, default_input_file_type='.npy',
+        extract_features(segmented_data_path, OUTPUT_FOLDER_PATH, window_scaler='none',
+                         default_input_file_type='.npy',
                          output_file_type='.npy')
 
     if ML_HAR:
+
+        # setting variables for run
+        # TODO: this has to be solved in a different way
+        norm_type = 'none'
+        balancing_type = 'main_classes'
+        num_features_retain = 10
 
         print("HAR model training/test")
 
         # set random seed
         np.random.seed(RANDOM_SEED)
 
-        # set the norm type
-        norm_type = 'minmax'
-
         # path to feature folder (change the folder name to run the different normalization schemes)
         feature_data_folder = os.path.join(OUTPUT_FOLDER_PATH, EXTRACTED_FEATRES_FOLDER, f"w_1-5_sc_{norm_type}")
 
         # load feature, labels, and subject IDs
         # (change balance_data='sub_classes' when wanting to classify all sub-classes individually)
-        X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data='main_classes')
+        X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data=balancing_type)
 
         # split of train and test set
         splitter = GroupShuffleSplit(test_size=0.2, n_splits=1)
@@ -78,34 +82,35 @@ if __name__ == '__main__':
 
         # get train and test sets
         X_train = X.iloc[train_idx]
-        y_main_train = y_main.iloc[train_idx]
-        y_sub_train = y_sub[train_idx]
         X_test = X.iloc[test_idx]
-        y_main_test = y_main.iloc[test_idx]
-        y_sub_test = y_sub[test_idx]
 
+        # get y depending on the balancing type
+        if balancing_type == 'main_classes':
+            y_train = y_main.iloc[train_idx]
+            y_test = y_main.iloc[test_idx]
+
+        else:  # sub-class balancing
+            y_train = y_sub[train_idx]
+            y_test = y_sub[test_idx]
+
+        # get the subjects for training
         subject_ids_train = subject_ids.iloc[train_idx]
 
-        # (1) perform model agnostic feature selection
+        # perform model agnostic feature selection
         X_train, X_test = remove_low_variance(X_train, X_test, threshold=0.1)
         X_train, X_test = remove_highly_correlated_features(X_train, X_test, threshold=0.9)
-        X_train, X_test = select_k_best_features(X_train, X_test, y_main_train, k=10)
+        X_train, X_test = select_k_best_features(X_train, X_test, y_train, k=num_features_retain)
 
         if ML_MODEL_SELECTION:
 
-            # evaluate the models using main_class labels
-            evaluate_models(X_train, y_sub_train, subject_ids_train, norm_type=norm_type)
+            print("Evaluating different models (Random Forest vs. KNN vs. SVM)")
 
-            # evaluate the models using sub_class labels
+            # evaluate the models using main_class labels
+            evaluate_models(X_train, y_train, subject_ids_train, norm_type=norm_type)
 
         if ML_TRAIN_PRODUCTION_MODEL:
 
             print("training and evaluating production model")
-
-
-
-
-        print('testing')
 
 
 
