@@ -26,9 +26,9 @@ ML_HAR = True
 ML_MODEL_SELECTION = True
 ML_TRAIN_PRODUCTION_MODEL = False
 
-# definition of folder_path (change these paths to where you store the data)
-RAW_DATA_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
-OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\'
+# definition of folder_path
+RAW_DATA_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
+OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here
@@ -59,10 +59,14 @@ if __name__ == '__main__':
         # set random seed
         np.random.seed(RANDOM_SEED)
 
+        # set the norm type
+        norm_type = 'minmax'
+
         # path to feature folder (change the folder name to run the different normalization schemes)
-        feature_data_folder = os.path.join(OUTPUT_FOLDER_PATH, EXTRACTED_FEATRES_FOLDER, "w_1-5_sc_standard")
+        feature_data_folder = os.path.join(OUTPUT_FOLDER_PATH, EXTRACTED_FEATRES_FOLDER, f"w_1-5_sc_{norm_type}")
 
         # load feature, labels, and subject IDs
+        # (change balance_data='sub_classes' when wanting to classify all sub-classes individually)
         X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data='main_classes')
 
         # split of train and test set
@@ -75,8 +79,10 @@ if __name__ == '__main__':
         # get train and test sets
         X_train = X.iloc[train_idx]
         y_main_train = y_main.iloc[train_idx]
+        y_sub_train = y_sub[train_idx]
         X_test = X.iloc[test_idx]
         y_main_test = y_main.iloc[test_idx]
+        y_sub_test = y_sub[test_idx]
 
         subject_ids_train = subject_ids.iloc[train_idx]
 
@@ -87,8 +93,10 @@ if __name__ == '__main__':
 
         if ML_MODEL_SELECTION:
 
-            # evaluate the different models
-            evaluate_models(X_train, y_main_train, subject_ids_train, norm_type='none')
+            # evaluate the models using main_class labels
+            evaluate_models(X_train, y_sub_train, subject_ids_train, norm_type=norm_type)
+
+            # evaluate the models using sub_class labels
 
         if ML_TRAIN_PRODUCTION_MODEL:
 

@@ -64,19 +64,19 @@ def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train
         svm_dict = {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC())]), PARAM_GRID: [
             {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
              f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
-            {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]},
+            {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]}
 
         knn_dict = {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (KNN, KNeighborsClassifier(algorithm='ball_tree'))]),
-                    PARAM_GRID: [{f'{KNN}__n_neighbors': list(range(1, 10)), f'{KNN}__p': [1, 2]}]}
+                    PARAM_GRID: [{f'{KNN}__n_neighbors': list(range(1, 15)), f'{KNN}__p': [1, 2]}]}
 
     else:
 
         svm_dict = {ESTIMATOR: SVC(), PARAM_GRID: [
             {'kernel': ['rbf'], 'C': np.power(10., np.arange(-4, 4)), 'gamma': np.power(10., np.arange(-5, 0))},
-            {'kernel': ['linear'], 'C': np.power(10., np.arange(-4, 4))}]},
+            {'kernel': ['linear'], 'C': np.power(10., np.arange(-4, 4))}]}
 
         knn_dict = {ESTIMATOR: KNeighborsClassifier(algorithm='ball_tree'),
-                    PARAM_GRID: [{f'{KNN}__n_neighbors': list(range(1, 10)), f'{KNN}__p': [1, 2]}]}
+                    PARAM_GRID: [{'n_neighbors': list(range(1, 10)), 'p': [1, 2]}]}
 
     # dict storing all different models
     model_dict = {
@@ -86,7 +86,7 @@ def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train
         SVM: svm_dict,
 
         RF: {ESTIMATOR: RandomForestClassifier(), PARAM_GRID: [
-            {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500], "max_depth": [2, 5, 10, 20]}]},
+            {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]},
     }
 
     for model_name, param_dict in model_dict.items():
@@ -94,23 +94,25 @@ def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train
         print(f'Algorithm: {model_name}')
 
         # get the estimator and the param grid
-        est = param_dict['estimator']
-        param_grid_est = param_dict['param_grid']
+        est = param_dict[ESTIMATOR]
+        param_grid_est = param_dict[PARAM_GRID]
 
         info_df = nested_cross_val(X_train, y_train, subject_ids_train, estimator=est, param_grid=param_grid_est)
 
         # save the results
-        _save_results(info_df, estimator_name=model_name, norm_type=norm_type)
+        _save_results(info_df, estimator_name=model_name, num_classes=len(y_train.unique()),
+                      num_features=len(X_train.columns), norm_type=norm_type)
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def _save_results(info_df: pd.DataFrame, estimator_name: str, norm_type: str) -> None:
+def _save_results(info_df: pd.DataFrame, estimator_name: str, num_classes: int, num_features: int, norm_type: str) -> None:
     """
     Saves the results from the nested cross-validation into a .csv file.
     :param info_df: pandas.DataFrame containing the information from the nested cross-validation
     :param estimator_name: the name of the estimator used in the nested cross-validation
+    :param num_features: the number of features used
     :param norm_type: the normalization type used.
     :return: None
     """
@@ -122,6 +124,6 @@ def _save_results(info_df: pd.DataFrame, estimator_name: str, norm_type: str) ->
     folder_path = create_dir(project_path, os.path.join("Results", "ML"))
 
     # create full file path
-    file_path = os.path.join(folder_path, f'{estimator_name}_{norm_type}.csv')
+    file_path = os.path.join(folder_path, f'{estimator_name}_cl{num_classes}_f{num_features}_wNorm-{norm_type}.csv')
 
     info_df.to_csv(file_path, sep=';', index=False)
