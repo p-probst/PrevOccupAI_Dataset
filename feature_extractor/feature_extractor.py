@@ -177,7 +177,7 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
                     if window_scaler:
 
                         # scale each window
-                        windowed_data[:, :, :-4] = window_scaling(windowed_data[:, :, :-4])
+                        windowed_data[:, :, :-4] = window_scaling(windowed_data[:, :, :-4], scaler=window_scaler)
 
                     # (4) extract features and labels
                     print(f"({file_num}.4) extracting features and labels")

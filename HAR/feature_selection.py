@@ -4,7 +4,9 @@ Functions for loading model agnostic feature selection.
 Available Functions
 -------------------
 [Public]
-
+remove_low_variance(...): Applies Variance Thresholding to remove low-variance features.
+remove_highly_correlated_features(...): Removes highly correlated features.
+select_k_best_features(...): Select the top k best features based on their relationship with the target variable.
 
 ------------------
 [Private]
@@ -24,7 +26,7 @@ from typing import Tuple
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def remove_low_variance(X_train: pd.DataFrame, X_test:pd.DataFrame, threshold: float = 0.1) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def remove_low_variance(X_train: pd.DataFrame, X_test: pd.DataFrame, threshold: float = 0.1) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Applies Variance Thresholding to remove low-variance features.
 

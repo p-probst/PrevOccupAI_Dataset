@@ -29,15 +29,25 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
                      param_grid: Union[List[Dict[str, Any]], Dict[str, Any]],
                      splits_outer: int = 5, splits_inner: int = 2) -> pd.DataFrame():
     """
+    Performs nested cross-validation using GroupKFold to evaluate a machine learning model with hyperparameter tuning.
 
-    :param X:
-    :param y:
-    :param subject_ids:
-    :param estimator:
-    :param param_grid:
-    :param splits_outer:
-    :param splits_inner:
-    :return:
+    The function applies a nested cross-validation strategy, where the outer loop performs model evaluation
+    and the inner loop performs hyperparameter tuning using GridSearchCV. The grouping variable `subject_ids`
+    ensures that data from the same subject does not appear in both training and validation sets.
+
+    The function generates a pandas.DataFrame containing the hyperparameters of the model as well as the avg. accuracy
+    of the inner GridSearch, the accuracy per outer fold, and the mean accuracy and std over all folds.
+
+    :param X: pandas.DataFrame containing the feature matrix
+    :param y: pandas.Series containing the target labels
+    :param subject_ids: pandas.Series containing the subject IDs.
+    :param estimator: the estimator to be evaluated
+    :param param_grid: the parameter grid for the estimator
+    :param splits_outer: number of outer cross-validation splits. Default: 5
+    :param splits_inner: number of inner cross-validation splits. Default: 2
+    :return: pandas.DataFrame containing the best hyperparameters found for each outer fold,
+        inner cross-validation accuracy, outer fold accuracy, and the overall mean and standard deviation
+        of accuracy across all outer folds.
     """
 
     # lists for holding the scores of the outer folds and the info of each fold
@@ -108,6 +118,7 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
     return info_df
 
 
+# TODO: implement standard hyperparameter tuning CV for tuning the production model
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #

@@ -7,7 +7,8 @@ Available Functions
 generate_segmented_dataset(...): Generates a dataset in which all (sub)activities are segmented into their own respective files.
 ------------------
 [Private]
-None
+_generate_json_header(...): Generates a json file containing the sensors corresponding to each column for all segmented tasks.
+_save_segmented_tasks(...): Saves the segmented_tasks into individual files.
 ------------------
 """
 
@@ -19,15 +20,15 @@ import matplotlib.pyplot as plt
 import os
 from typing import List, Optional
 import json
+import pandas as pd
 
 # internal imports
-from constants import VALID_ACTIVITIES, WALK, STAIRS, CABINETS, STAND,\
+from constants import VALID_ACTIVITIES, ACTIVITY_MAP, WALK, STAIRS, CABINETS, STAND,\
     VALID_SENSORS, IMU_SENSORS, ROT, \
-    VALID_FILE_TYPES, NPY, \
+    VALID_FILE_TYPES, NPY, CSV,\
     SEGMENTED_DATA_FOLDER, SENSOR_COLS_JSON, LOADED_SENSORS_KEY
 from .segment_activities import segment_activities, crop_segments
 from .load_sensor_data import load_data_from_same_recording
-from .save import save_segmented_tasks
 from file_utils import create_dir
 
 
@@ -160,7 +161,7 @@ def generate_segmented_dataset(raw_data_path: str, segmented_data_path: str,
             save_path = create_dir(segmented_data_path, os.path.join(SEGMENTED_DATA_FOLDER, subject))
 
             # save the data
-            save_segmented_tasks(segmented_tasks, activity, save_path, file_type=output_file_type)
+            _save_segmented_tasks(segmented_tasks, activity, save_path, file_type=output_file_type)
 
     # create json file containing the sensor_names (only if output file is .npy
     if output_file_type == NPY:
@@ -172,7 +173,7 @@ def generate_segmented_dataset(raw_data_path: str, segmented_data_path: str,
 # ------------------------------------------------------------------------------------------------------------------- #
 def _generate_json_header(loaded_sensors: List[str], output_path: str) -> None:
     """
-    generates a json file containing the sensors corresponding to each column for all segmented tasks. This function
+    Generates a json file containing the sensors corresponding to each column for all segmented tasks. This function
     is only needed when storing the segmented tasks as .npy files. Given that for all tasks the same sensors are loaded,
     this allows for a more memory efficient data storage, when compared to storing as .csv, as there is only one
     json-file for all tasks, thus reducing the overhead created by each .csv file.
@@ -209,6 +210,47 @@ def _generate_json_header(loaded_sensors: List[str], output_path: str) -> None:
     # store the json_file
     with open(json_path, "w") as json_file:
         json.dump(json_header, json_file)
+
+
+def _save_segmented_tasks(segmented_tasks: List[pd.DataFrame], activity: str, output_path: str,
+                         file_type: str = '.npy') -> None:
+    """
+    Saves the segmented_tasks into individual files.
+    :param segmented_tasks: list containing the segmented tasks.
+    :param activity: the name of the activity.
+    :param output_path: the path to where the segmented files should be stored.
+    :param file_type: the file type of the file in which the data should be stored.
+                      The following file types are supported: '.csv', '.npy'. Default: '.npy'
+    :return: None
+    """
+
+    # check for valid padding type
+    if file_type not in VALID_FILE_TYPES:
+        raise ValueError(f"The file type you chose is not supported. Chosen file type: {file_type}."
+                         f"\nPlease choose one of the following: {', '.join(VALID_FILE_TYPES)}.")
+
+    # get the sub-activity suffixes
+    sub_activity_suffixes = ACTIVITY_MAP[activity]
+
+    # cycle over the segments
+    for task_df, task_suffix in zip(segmented_tasks, sub_activity_suffixes):
+
+        # generate file name
+        file_name = f"{activity}{task_suffix}{file_type}"
+
+        # generate full path
+        file_path = os.path.join(output_path, file_name)
+
+        # save the file
+        if file_type == CSV:
+
+            # as csv file
+            task_df.to_csv(file_path, sep=';', index=False)
+        else:
+
+            # as npy file
+            np.save(file_path, task_df.values)
+
 
 
 

@@ -5,6 +5,7 @@ Available Functions
 -------------------
 [Public]
 pre_process_inertial_data(...): Applies the pre-processing pipeline of "A Public Domain Dataset for Human Activity Recognition Using Smartphones".
+slerp_smooting(...): Smooths a quaternion time series using spherical linear interpolation (SLERP).
 ------------------
 [Private]
 None
@@ -67,17 +68,31 @@ def pre_process_inertial_data(sensor_data: np.array, is_acc: bool = False, fs: i
 def slerp_smoothing(quaternion_array: np.array, smooth_factor: float = 0.5, scalar_first: bool = False,
                     return_numpy: bool = True, return_scalar_first: bool = False) -> np.array:
     """
-    The implementation is based on:
+    Smooths a quaternion time series using spherical linear interpolation (SLERP).
+
+    This function applies SLERP to smooth a sequence of quaternions by interpolating
+    between consecutive quaternions with a specified smoothing factor. The method follows
+    the approach described in:
     https://www.mathworks.com/help/fusion/ug/lowpass-filter-orientation-using-quaternion-slerp.html
-    :param quaternion_array:
-    :param smooth_factor:
-    :param scalar_first:
-    :param return_numpy:
-    :param return_scalar_first:
-    :return: returns quaternions in either scalar first (w, x, y, z) or scalar last notation (x, y, z, w)
+
+    :param quaternion_array: 2D numpy.array of shape (N, 4) containing a sequence of quaternions. The quaternions can
+                             be represented in either scalar-first (w, x, y, z) or scalar-last (x, y, z, w) notation.
+    :param smooth_factor: the interpolation factor for SLERP, controlling how much smoothing is applied. The value must
+                          be between [0, 1]. Values closer to 0 increase smoothing, while values closer to 1 retain the
+                          original sequence.
+    :param scalar_first: boolean indicating the notation that is used. Default: False
+    :param return_numpy: boolean indicating, whether a numpy.array should be returned. If false an array containing
+                         pyquaternion.Quaternion objects are returned.
+    :param return_scalar_first: boolean indicating the notation for the return type. Default: False
+    :return: returns quaternions in either scalar first (w, x, y, z) or scalar last notation (x, y, z, w), depending on
+             the parameter settings of the boolean parameters.
     """
 
-    # change quaternion notation to scalar first notation (w, x, y, z) if it is not
+    # check range of smooth factor
+    if not (0 <= smooth_factor <= 1):
+        raise ValueError(f"The smooth factor has to be between [0, 1]. Provided smooth factor: {smooth_factor}")
+
+    # change quaternion notation to scalar first notation (w, x, y, z)
     # this is needed as pyquaternion assumes this notation
     if not scalar_first:
 
