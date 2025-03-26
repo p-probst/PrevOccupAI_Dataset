@@ -3,11 +3,6 @@
 # ------------------------------------------------------------------------------------------------------------------- #
 import os
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
 # internal imports
 from constants import VALID_SENSORS, SEGMENTED_DATA_FOLDER, EXTRACTED_FEATRES_FOLDER, RANDOM_SEED
@@ -21,14 +16,14 @@ import numpy as np
 # constants
 # ------------------------------------------------------------------------------------------------------------------- #
 GENERATE_SEGMENTED_DATASET = False
-EXTRACT_FEATURES = True
+EXTRACT_FEATURES = False
 ML_HAR = True
 ML_MODEL_SELECTION = True
 ML_TRAIN_PRODUCTION_MODEL = False
 
 # definition of folder_path
-RAW_DATA_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
-OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\'
+RAW_DATA_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
+OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here
@@ -39,7 +34,7 @@ if __name__ == '__main__':
 
         # generate the segmented data set
         generate_segmented_dataset(RAW_DATA_FOLDER_PATH, OUTPUT_FOLDER_PATH, load_sensors=VALID_SENSORS,
-                                   fs=100, output_file_type='.csv', plot_cropped_tasks=False, plot_segment_lines=False)
+                                   fs=100, output_file_type='.npy', plot_cropped_tasks=False, plot_segment_lines=False)
 
     if EXTRACT_FEATURES:
 
@@ -49,7 +44,7 @@ if __name__ == '__main__':
         segmented_data_path = os.path.join(OUTPUT_FOLDER_PATH, SEGMENTED_DATA_FOLDER)
 
         # extract features and save them to individual subject files
-        extract_features(segmented_data_path, OUTPUT_FOLDER_PATH, window_scaler='none',
+        extract_features(segmented_data_path, OUTPUT_FOLDER_PATH, window_scaler=None,
                          default_input_file_type='.npy',
                          output_file_type='.npy')
 
@@ -59,7 +54,7 @@ if __name__ == '__main__':
         # TODO: this has to be solved in a different way
         norm_type = 'none'
         balancing_type = 'main_classes'
-        num_features_retain = 10
+        num_features_retain = 15
 
         print("HAR model training/test")
 

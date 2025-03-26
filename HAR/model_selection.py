@@ -61,6 +61,8 @@ def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train
     # init models depending on norm_type
     if norm_type == 'none':
 
+        print("adding standard scaler to SVM and KNN")
+
         svm_dict = {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC())]), PARAM_GRID: [
             {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
              f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
@@ -86,7 +88,7 @@ def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train
         SVM: svm_dict,
 
         RF: {ESTIMATOR: RandomForestClassifier(), PARAM_GRID: [
-            {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]},
+            {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]}
     }
 
     for model_name, param_dict in model_dict.items():

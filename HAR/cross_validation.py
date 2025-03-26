@@ -79,17 +79,17 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
 
         # test the best estimator on the validation set of the current fold (this is possible as refit=True)
         y_pred = grid_search.best_estimator_.predict(X_val)
-        fold_acc = accuracy_score(y_val, y_pred)
+        fold_acc = accuracy_score(y_val, y_pred) * 100
 
         # print the results
-        inner_acc = grid_search.best_score_
+        inner_acc = grid_search.best_score_ * 100
         best_params = grid_search.best_params_
 
         # print the results
         print(f'\nResults of fold {fold_num}/{splits_outer}')
-        print(f'best accuracy (inner fold avg.): {inner_acc * 100:.2f} %')
+        print(f'best accuracy (inner fold avg.): {inner_acc:.2f} %')
         print(f'best params: {best_params}')
-        print(f'--> fold accuracy: {fold_acc * 100:.2f} %')
+        print(f'--> fold accuracy: {fold_acc:.2f} %')
         print('-------------------------')
 
         # append fold score
@@ -100,8 +100,8 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
         fold_info.append(best_params)
 
     # calculate the average accuracy over all outer folds
-    outer_fold_avg_acc = np.mean(fold_scores) * 100
-    outer_fold_std = np.std(fold_scores) * 100
+    outer_fold_avg_acc = np.mean(fold_scores)
+    outer_fold_std = np.std(fold_scores)
 
     # print the result
     print(f'\naverage score over all folds: {outer_fold_avg_acc:.2f} +/- {outer_fold_std:.2f}')
