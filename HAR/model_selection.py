@@ -15,21 +15,24 @@ _save_results(...): Saves the results from the nested cross-validation into a .c
 # ------------------------------------------------------------------------------------------------------------------- #
 # imports
 # ------------------------------------------------------------------------------------------------------------------- #
+import os
 import numpy as np
 import pandas as pd
-import os
+import joblib
+import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 # internal imports
-from .cross_validation import nested_cross_val
+from .cross_validation import nested_cross_val, tune_production_model
 from file_utils import create_dir
 
 # ------------------------------------------------------------------------------------------------------------------- #
-# constans
+# constants
 # ------------------------------------------------------------------------------------------------------------------- #
 RF = "Random Forest"
 SVM = "SVM"
@@ -58,39 +61,6 @@ def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train
     :return: None
     """
 
-    # # init models depending on norm_type
-    # if norm_type == 'none':
-    #
-    #     print("adding standard scaler to SVM and KNN")
-    #
-    #     svm_dict = {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC())]), PARAM_GRID: [
-    #         {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
-    #          f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
-    #         {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]}
-    #
-    #     knn_dict = {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (KNN, KNeighborsClassifier(algorithm='ball_tree'))]),
-    #                 PARAM_GRID: [{f'{KNN}__n_neighbors': list(range(1, 15)), f'{KNN}__p': [1, 2]}]}
-    #
-    # else:
-    #
-    #     svm_dict = {ESTIMATOR: SVC(), PARAM_GRID: [
-    #         {'kernel': ['rbf'], 'C': np.power(10., np.arange(-4, 4)), 'gamma': np.power(10., np.arange(-5, 0))},
-    #         {'kernel': ['linear'], 'C': np.power(10., np.arange(-4, 4))}]}
-    #
-    #     knn_dict = {ESTIMATOR: KNeighborsClassifier(algorithm='ball_tree'),
-    #                 PARAM_GRID: [{'n_neighbors': list(range(1, 10)), 'p': [1, 2]}]}
-
-    # dict storing all different models
-    # model_dict = {
-    #
-    #     KNN: knn_dict,
-    #
-    #     SVM: svm_dict,
-    #
-    #     RF: {ESTIMATOR: RandomForestClassifier(), PARAM_GRID: [
-    #         {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]}
-    # }
-
     model_dict = {
 
          KNN: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (KNN, KNeighborsClassifier(algorithm='ball_tree'))]),
@@ -118,6 +88,49 @@ def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train
         # save the results
         _save_results(info_df, estimator_name=model_name, num_classes=len(y_train.unique()),
                       num_features=len(X_train.columns), norm_type=norm_type)
+
+def evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
+                              X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series) -> None:
+    """
+
+    :param X_train: pandas.DataFrame containing the training data
+    :param y_train: pandas.Series containing the training labels
+    :param X_test: pandas.DataFrame containing the test data
+    :param y_test: pandas.Series containing the training labels
+    :param subject_ids_train: pandas.Series containing the subject IDs
+    :return: None
+    """
+
+    # define estimator and hyperparameters
+    estimator = RandomForestClassifier()
+
+    param_grid = {"criterion": ['gini', 'entropy'],
+                  "n_estimators": [50, 100, 500, 1000],
+                  "max_depth": [2, 5, 10, 20, 30]}
+
+    # perform hyperparameter tuning
+    model = tune_production_model(X=X_train, y=y_train, subject_ids=subject_ids_train,
+                                  estimator=estimator, param_grid=param_grid, cv_splits=2)
+
+    # get train and test accuracy
+    train_acc = accuracy_score(y_true=y_train, y_pred=model.predict(X_train))
+    test_acc = accuracy_score(y_true=y_test, y_pred=model.predict(X_test))
+
+    print("\nResults on production model evaluation.")
+    print(f"train accuracy: {train_acc * 100: .2f}")
+    print(f"test accuracy: {test_acc * 100: .2f}")
+
+    # plot confusion matrix
+    ConfusionMatrixDisplay.from_estimator(model, X_test, y_test)
+    plt.title("Confusion Matrix | Test set")
+    plt.show()
+
+    # save model
+    # get the project path
+    project_path = os.getcwd()
+    model_path = os.path.join(project_path, "HAR", "HAR_model.joblib")
+    joblib.dump(model, model_path)
+
 
 
 # ------------------------------------------------------------------------------------------------------------------- #

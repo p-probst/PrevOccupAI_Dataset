@@ -16,7 +16,7 @@ None
 # ------------------------------------------------------------------------------------------------------------------- #
 import pandas as pd
 import numpy as np
-from sklearn.base import ClassifierMixin
+from sklearn.base import ClassifierMixin, BaseEstimator
 from sklearn.model_selection import GroupKFold, GridSearchCV
 from sklearn.metrics import accuracy_score
 from typing import Dict, Any, List, Union
@@ -117,8 +117,39 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
 
     return info_df
 
-
 # TODO: implement standard hyperparameter tuning CV for tuning the production model
+def tune_production_model(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, estimator: ClassifierMixin,
+                          param_grid: Union[List[Dict[str, Any]], Dict[str, Any]],
+                          cv_splits: int = 5):
+    """
+    Performs hyperparameter tuning on using X and y. This function can be used to train the production model on the
+    entire training set.
+    :param X: pandas.DataFrame containing the feature matrix
+    :param y: pandas.Series containing the target labels
+    :param subject_ids: pandas.Series containing the subject IDs.
+    :param estimator: the estimator to be evaluated
+    :param param_grid: the parameter grid for the estimator
+    :param cv_splits: the number of cross-validation splits for the gridsearch
+    :return:
+    """
+
+    # set up cross-validation for hyperparameter tuning
+    cv = GroupKFold(n_splits=cv_splits)
+    grid_search = GridSearchCV(estimator=estimator, param_grid=param_grid, scoring='accuracy',
+                               n_jobs=-1, cv=cv, verbose=1, refit=True)
+
+    # perform hyperparameter tuning
+    grid_search.fit(X, y, groups=subject_ids)
+
+    # print the results
+    print("\nResults of hyperparameter tuning")
+    print(f"best score (CV avg.): {grid_search.best_score_ * 100}")
+    print(f"best parameters: {grid_search.best_params_}")
+    print('-------------------------')
+
+    return grid_search.best_estimator_
+
+
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #

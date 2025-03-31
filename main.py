@@ -18,8 +18,8 @@ import numpy as np
 GENERATE_SEGMENTED_DATASET = False
 EXTRACT_FEATURES = False
 ML_HAR = True
-ML_MODEL_SELECTION = True
-ML_TRAIN_PRODUCTION_MODEL = False
+ML_MODEL_SELECTION = False
+ML_TRAIN_PRODUCTION_MODEL = True
 
 # definition of folder_path
 RAW_DATA_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
@@ -52,9 +52,9 @@ if __name__ == '__main__':
 
         # setting variables for run
         # TODO: this has to be solved in a different way
-        norm_type = 'minmax'
+        norm_type = 'none'
         balancing_type = 'main_classes'
-        num_features_retain = 35
+        num_features_retain = 30
 
         print("HAR model training/test")
 
