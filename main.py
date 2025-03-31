@@ -8,7 +8,8 @@ from sklearn.model_selection import GroupShuffleSplit
 from constants import VALID_SENSORS, SEGMENTED_DATA_FOLDER, EXTRACTED_FEATRES_FOLDER, RANDOM_SEED
 from raw_data_processor import generate_segmented_dataset
 from feature_extractor import extract_features
-from HAR import load_features, remove_low_variance, remove_highly_correlated_features, select_k_best_features, evaluate_models
+from HAR import (load_features, remove_low_variance, remove_highly_correlated_features, select_k_best_features,
+                 evaluate_models, evaluate_production_model)
 import numpy as np
 
 
@@ -108,6 +109,10 @@ if __name__ == '__main__':
         if ML_TRAIN_PRODUCTION_MODEL:
 
             print("training and evaluating production model")
+
+            # evaluate production model
+            evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train)
+
 
 
 
