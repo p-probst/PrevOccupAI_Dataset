@@ -58,37 +58,51 @@ def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train
     :return: None
     """
 
-    # init models depending on norm_type
-    if norm_type == 'none':
-
-        print("adding standard scaler to SVM and KNN")
-
-        svm_dict = {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC())]), PARAM_GRID: [
-            {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
-             f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
-            {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]}
-
-        knn_dict = {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (KNN, KNeighborsClassifier(algorithm='ball_tree'))]),
-                    PARAM_GRID: [{f'{KNN}__n_neighbors': list(range(1, 15)), f'{KNN}__p': [1, 2]}]}
-
-    else:
-
-        svm_dict = {ESTIMATOR: SVC(), PARAM_GRID: [
-            {'kernel': ['rbf'], 'C': np.power(10., np.arange(-4, 4)), 'gamma': np.power(10., np.arange(-5, 0))},
-            {'kernel': ['linear'], 'C': np.power(10., np.arange(-4, 4))}]}
-
-        knn_dict = {ESTIMATOR: KNeighborsClassifier(algorithm='ball_tree'),
-                    PARAM_GRID: [{'n_neighbors': list(range(1, 10)), 'p': [1, 2]}]}
+    # # init models depending on norm_type
+    # if norm_type == 'none':
+    #
+    #     print("adding standard scaler to SVM and KNN")
+    #
+    #     svm_dict = {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC())]), PARAM_GRID: [
+    #         {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
+    #          f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
+    #         {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]}
+    #
+    #     knn_dict = {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (KNN, KNeighborsClassifier(algorithm='ball_tree'))]),
+    #                 PARAM_GRID: [{f'{KNN}__n_neighbors': list(range(1, 15)), f'{KNN}__p': [1, 2]}]}
+    #
+    # else:
+    #
+    #     svm_dict = {ESTIMATOR: SVC(), PARAM_GRID: [
+    #         {'kernel': ['rbf'], 'C': np.power(10., np.arange(-4, 4)), 'gamma': np.power(10., np.arange(-5, 0))},
+    #         {'kernel': ['linear'], 'C': np.power(10., np.arange(-4, 4))}]}
+    #
+    #     knn_dict = {ESTIMATOR: KNeighborsClassifier(algorithm='ball_tree'),
+    #                 PARAM_GRID: [{'n_neighbors': list(range(1, 10)), 'p': [1, 2]}]}
 
     # dict storing all different models
+    # model_dict = {
+    #
+    #     KNN: knn_dict,
+    #
+    #     SVM: svm_dict,
+    #
+    #     RF: {ESTIMATOR: RandomForestClassifier(), PARAM_GRID: [
+    #         {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]}
+    # }
+
     model_dict = {
 
-        KNN: knn_dict,
+         KNN: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (KNN, KNeighborsClassifier(algorithm='ball_tree'))]),
+               PARAM_GRID: [{f'{KNN}__n_neighbors': list(range(1, 15)), f'{KNN}__p': [1, 2]}]},
 
-        SVM: svm_dict,
+         SVM: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC())]), PARAM_GRID: [
+             {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
+              f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
+             {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]},
 
-        RF: {ESTIMATOR: RandomForestClassifier(), PARAM_GRID: [
-            {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]}
+         RF: {ESTIMATOR: RandomForestClassifier(), PARAM_GRID: [
+             {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]}
     }
 
     for model_name, param_dict in model_dict.items():

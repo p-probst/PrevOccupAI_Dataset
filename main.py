@@ -44,7 +44,7 @@ if __name__ == '__main__':
         segmented_data_path = os.path.join(OUTPUT_FOLDER_PATH, SEGMENTED_DATA_FOLDER)
 
         # extract features and save them to individual subject files
-        extract_features(segmented_data_path, OUTPUT_FOLDER_PATH, window_scaler=None,
+        extract_features(segmented_data_path, OUTPUT_FOLDER_PATH, window_scaler='standard',
                          default_input_file_type='.npy',
                          output_file_type='.npy')
 
@@ -52,9 +52,9 @@ if __name__ == '__main__':
 
         # setting variables for run
         # TODO: this has to be solved in a different way
-        norm_type = 'none'
+        norm_type = 'minmax'
         balancing_type = 'main_classes'
-        num_features_retain = 15
+        num_features_retain = 35
 
         print("HAR model training/test")
 
@@ -95,6 +95,8 @@ if __name__ == '__main__':
         X_train, X_test = remove_low_variance(X_train, X_test, threshold=0.1)
         X_train, X_test = remove_highly_correlated_features(X_train, X_test, threshold=0.9)
         X_train, X_test = select_k_best_features(X_train, X_test, y_train, k=num_features_retain)
+
+        print(f"Used features: {X_train.columns.values}")
 
         if ML_MODEL_SELECTION:
 
