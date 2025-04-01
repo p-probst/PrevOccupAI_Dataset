@@ -4,7 +4,8 @@ Functions for performing cross-validation for model selection and hyperparameter
 Available Functions
 -------------------
 [Public]
-
+nested_cross_val(...): Performs nested cross-validation using GroupKFold to evaluate a machine learning model with hyperparameter tuning.
+tune_production_model(...): Performs hyperparameter tuning using GroupKFold, X and y.
 ------------------
 [Private]
 None
@@ -20,6 +21,8 @@ from sklearn.base import ClassifierMixin, BaseEstimator
 from sklearn.model_selection import GroupKFold, GridSearchCV
 from sklearn.metrics import accuracy_score
 from typing import Dict, Any, List, Union
+
+from constants import RANDOM_SEED
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -55,10 +58,10 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
     fold_info = []
 
     # set up cross-validation for outer loop
-    outer_cv = GroupKFold(n_splits=splits_outer)
+    outer_cv = GroupKFold(n_splits=splits_outer, shuffle=True, random_state=RANDOM_SEED)
 
     # set up inner cross-validation for hyperparameter tuning using gridSearch
-    inner_cv = GroupKFold(n_splits=splits_inner)
+    inner_cv = GroupKFold(n_splits=splits_inner, shuffle=True, random_state=RANDOM_SEED)
     grid_search = GridSearchCV(estimator=estimator, param_grid=param_grid, scoring='accuracy',
                                n_jobs=-1, cv=inner_cv, verbose=1, refit=True)
 
@@ -122,19 +125,19 @@ def tune_production_model(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series,
                           param_grid: Union[List[Dict[str, Any]], Dict[str, Any]],
                           cv_splits: int = 5):
     """
-    Performs hyperparameter tuning on using X and y. This function can be used to train the production model on the
-    entire training set.
+    Performs hyperparameter tuning using GroupKFold, X and y. This function can be used to train the production model
+    on the entire training set.
     :param X: pandas.DataFrame containing the feature matrix
     :param y: pandas.Series containing the target labels
     :param subject_ids: pandas.Series containing the subject IDs.
     :param estimator: the estimator to be evaluated
     :param param_grid: the parameter grid for the estimator
-    :param cv_splits: the number of cross-validation splits for the gridsearch
+    :param cv_splits: the number of cross-validation splits for the gridsearch. Default: 5
     :return:
     """
 
     # set up cross-validation for hyperparameter tuning
-    cv = GroupKFold(n_splits=cv_splits)
+    cv = GroupKFold(n_splits=cv_splits, shuffle=True, random_state=RANDOM_SEED)
     grid_search = GridSearchCV(estimator=estimator, param_grid=param_grid, scoring='accuracy',
                                n_jobs=-1, cv=cv, verbose=1, refit=True)
 

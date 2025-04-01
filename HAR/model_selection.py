@@ -5,7 +5,7 @@ Available Functions
 -------------------
 [Public]
 evaluate_models(...): Evaluates multiple machine learning models using nested cross-validation.
-
+evaluate_production_model(...): Performs a final hyperparameter tuning and performs production model evaluation.
 ------------------
 [Private]
 _save_results(...): Saves the results from the nested cross-validation into a .csv file.
@@ -27,6 +27,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from constants import RANDOM_SEED
 # internal imports
 from .cross_validation import nested_cross_val, tune_production_model
 from file_utils import create_dir
@@ -66,12 +67,12 @@ def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train
          KNN: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (KNN, KNeighborsClassifier(algorithm='ball_tree'))]),
                PARAM_GRID: [{f'{KNN}__n_neighbors': list(range(1, 15)), f'{KNN}__p': [1, 2]}]},
 
-         SVM: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC())]), PARAM_GRID: [
+         SVM: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC(random_state=RANDOM_SEED))]), PARAM_GRID: [
              {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
               f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
              {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]},
 
-         RF: {ESTIMATOR: RandomForestClassifier(), PARAM_GRID: [
+         RF: {ESTIMATOR: RandomForestClassifier(random_state=RANDOM_SEED), PARAM_GRID: [
              {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]}
     }
 
@@ -90,19 +91,22 @@ def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train
                       num_features=len(X_train.columns), norm_type=norm_type)
 
 def evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
-                              X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series) -> None:
+                              X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series,
+                              cv_splits: int = 5) -> None:
     """
-
+    Performs a final hyperparameter tuning on the production model that was chosen based on the results from
+    evaluate_models(...) and evaluates the model on the test data.
     :param X_train: pandas.DataFrame containing the training data
     :param y_train: pandas.Series containing the training labels
     :param X_test: pandas.DataFrame containing the test data
     :param y_test: pandas.Series containing the training labels
     :param subject_ids_train: pandas.Series containing the subject IDs
+    :param cv_splits: the number of cross-validation splits for the gridsearch. Default: 5
     :return: None
     """
 
     # define estimator and hyperparameters
-    estimator = RandomForestClassifier()
+    estimator = RandomForestClassifier(random_state=RANDOM_SEED)
 
     param_grid = {"criterion": ['gini', 'entropy'],
                   "n_estimators": [50, 100, 500, 1000],
@@ -110,7 +114,7 @@ def evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
 
     # perform hyperparameter tuning
     model = tune_production_model(X=X_train, y=y_train, subject_ids=subject_ids_train,
-                                  estimator=estimator, param_grid=param_grid, cv_splits=2)
+                                  estimator=estimator, param_grid=param_grid, cv_splits=cv_splits)
 
     # get train and test accuracy
     train_acc = accuracy_score(y_true=y_train, y_pred=model.predict(X_train))
