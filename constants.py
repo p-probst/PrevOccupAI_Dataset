@@ -94,7 +94,7 @@ VALID_FILE_TYPES = [CSV, NPY]
 # output folder names
 # ------------------------------------------------------------------------------------------------------------------- #
 SEGMENTED_DATA_FOLDER = 'segmented_data'
-EXTRACTED_FEATRES_FOLDER = 'extracted_features'
+EXTRACTED_FEATURES_FOLDER = 'extracted_features'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # json files and keys

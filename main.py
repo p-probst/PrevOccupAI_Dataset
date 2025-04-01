@@ -5,7 +5,7 @@ import os
 from sklearn.model_selection import GroupShuffleSplit
 
 # internal imports
-from constants import VALID_SENSORS, SEGMENTED_DATA_FOLDER, EXTRACTED_FEATRES_FOLDER, RANDOM_SEED
+from constants import VALID_SENSORS, SEGMENTED_DATA_FOLDER, EXTRACTED_FEATURES_FOLDER, RANDOM_SEED
 from raw_data_processor import generate_segmented_dataset
 from feature_extractor import extract_features
 from HAR import (load_features, remove_low_variance, remove_highly_correlated_features, select_k_best_features,
@@ -19,8 +19,8 @@ import numpy as np
 GENERATE_SEGMENTED_DATASET = False
 EXTRACT_FEATURES = False
 ML_HAR = True
-ML_MODEL_SELECTION = False
-ML_TRAIN_PRODUCTION_MODEL = True
+ML_MODEL_SELECTION = True
+ML_TRAIN_PRODUCTION_MODEL = False
 
 # definition of folder_path
 RAW_DATA_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
@@ -53,65 +53,76 @@ if __name__ == '__main__':
 
         # setting variables for run
         # TODO: this has to be solved in a different way
-        norm_type = 'none'
+        #norm_type = 'none'
         balancing_type = 'main_classes'
-        num_features_retain = 30
+        #num_features_retain = 5
 
         print("HAR model training/test")
 
         # set random seed
         np.random.seed(RANDOM_SEED)
 
-        # path to feature folder (change the folder name to run the different normalization schemes)
-        feature_data_folder = os.path.join(OUTPUT_FOLDER_PATH, EXTRACTED_FEATRES_FOLDER, f"w_1-5_sc_{norm_type}")
+        for norm_type in ['none', 'minmax', 'standard']:
 
-        # load feature, labels, and subject IDs
-        # (change balance_data='sub_classes' when wanting to classify all sub-classes individually)
-        X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data=balancing_type)
+            # path to feature folder (change the folder name to run the different normalization schemes)
+            feature_data_folder = os.path.join(OUTPUT_FOLDER_PATH, EXTRACTED_FEATURES_FOLDER, f"w_1-5_sc_{norm_type}")
 
-        # split of train and test set
-        splitter = GroupShuffleSplit(test_size=0.2, n_splits=1)
-        train_idx, test_idx = next(splitter.split(X, y_main, groups=subject_ids))
+            # load feature, labels, and subject IDs
+            # (change balance_data='sub_classes' when wanting to classify all sub-classes individually)
+            X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data=balancing_type)
 
-        print(f"subjects train: {subject_ids[train_idx].unique()}")
-        print(f"subjects test: {subject_ids[test_idx].unique()}")
+            # split of train and test set
+            splitter = GroupShuffleSplit(test_size=0.2, n_splits=1, random_state=RANDOM_SEED)
+            train_idx, test_idx = next(splitter.split(X, y_main, groups=subject_ids))
 
-        # get train and test sets
-        X_train = X.iloc[train_idx]
-        X_test = X.iloc[test_idx]
+            print(f"subjects train: {subject_ids[train_idx].unique()}")
+            print(f"subjects test: {subject_ids[test_idx].unique()}")
 
-        # get y depending on the balancing type
-        if balancing_type == 'main_classes':
-            y_train = y_main.iloc[train_idx]
-            y_test = y_main.iloc[test_idx]
+            # get train and test sets
+            X_train_unp = X.iloc[train_idx]
+            X_test_unp = X.iloc[test_idx]
 
-        else:  # sub-class balancing
-            y_train = y_sub[train_idx]
-            y_test = y_sub[test_idx]
+            # get y depending on the balancing type
+            if balancing_type == 'main_classes':
+                y_train = y_main.iloc[train_idx]
+                y_test = y_main.iloc[test_idx]
 
-        # get the subjects for training
-        subject_ids_train = subject_ids.iloc[train_idx]
+            else:  # sub-class balancing
+                y_train = y_sub[train_idx]
+                y_test = y_sub[test_idx]
 
-        # perform model agnostic feature selection
-        X_train, X_test = remove_low_variance(X_train, X_test, threshold=0.1)
-        X_train, X_test = remove_highly_correlated_features(X_train, X_test, threshold=0.9)
-        X_train, X_test = select_k_best_features(X_train, X_test, y_train, k=num_features_retain)
+            # get the subjects for training
+            subject_ids_train = subject_ids.iloc[train_idx]
 
-        print(f"Used features: {X_train.columns.values}")
+            for num_features_retain in [5, 10, 15, 20, 25, 30, 35]:
 
-        if ML_MODEL_SELECTION:
+                print("\n.................................................................")
+                print(f"Testing {num_features_retain} features with norm type \'{norm_type}\'...\n")
 
-            print("Evaluating different models (Random Forest vs. KNN vs. SVM)")
+                # perform model agnostic feature selection
+                X_train, X_test = remove_low_variance(X_train_unp, X_test_unp, threshold=0.1)
+                X_train, X_test = remove_highly_correlated_features(X_train, X_test, threshold=0.9)
+                X_train, X_test = select_k_best_features(X_train, X_test, y_train, k=num_features_retain)
 
-            # evaluate the models using main_class labels
-            evaluate_models(X_train, y_train, subject_ids_train, norm_type=norm_type)
+                print(f"Used features: {X_train.columns.values}")
 
-        if ML_TRAIN_PRODUCTION_MODEL:
+                if ML_MODEL_SELECTION:
+                    print("Evaluating different models (Random Forest vs. KNN vs. SVM)")
 
-            print("training and evaluating production model")
+                    # evaluate the models using main_class labels
+                    evaluate_models(X_train, y_train, subject_ids_train, norm_type=norm_type)
 
-            # evaluate production model
-            evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train)
+                # if ML_TRAIN_PRODUCTION_MODEL:
+                #     print("training and evaluating production model")
+                #
+                #     # evaluate production model
+                #     evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, cv_splits=2)
+
+
+
+
+
+
 
 
 

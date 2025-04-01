@@ -120,7 +120,7 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
 
     return info_df
 
-# TODO: implement standard hyperparameter tuning CV for tuning the production model
+
 def tune_production_model(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, estimator: ClassifierMixin,
                           param_grid: Union[List[Dict[str, Any]], Dict[str, Any]],
                           cv_splits: int = 5):
