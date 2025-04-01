@@ -26,7 +26,7 @@ from typing import Tuple
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def remove_low_variance(X_train: pd.DataFrame, X_test: pd.DataFrame, threshold: float = 0.1) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def remove_low_variance(X_train: pd.DataFrame, X_test: pd.DataFrame=None, threshold: float = 0.1) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Applies Variance Thresholding to remove low-variance features.
 
@@ -37,19 +37,25 @@ def remove_low_variance(X_train: pd.DataFrame, X_test: pd.DataFrame, threshold: 
     """
     selector = VarianceThreshold(threshold=threshold)
     X_train_selected = selector.fit_transform(X_train)  # Fit only on X_train
-    X_test_selected = selector.transform(X_test)  # Apply transformation to X_test
 
     # Get the retained feature names
     retained_columns = X_train.columns[selector.get_support()]
 
     # Convert back to DataFrame
     X_train_filtered = pd.DataFrame(X_train_selected, columns=retained_columns, index=X_train.index)
-    X_test_filtered = pd.DataFrame(X_test_selected, columns=retained_columns, index=X_test.index)
+
+    # Apply transformation to X_test
+    if isinstance(X_test, pd.DataFrame):
+        X_test_selected = selector.transform(X_test)
+        X_test_filtered = pd.DataFrame(X_test_selected, columns=retained_columns, index=X_test.index)
+
+    else:
+        X_test_filtered = None
 
     return X_train_filtered, X_test_filtered
 
 
-def remove_highly_correlated_features(X_train: pd.DataFrame, X_test: pd.DataFrame, threshold: float = 0.9) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def remove_highly_correlated_features(X_train: pd.DataFrame, X_test: pd.DataFrame=None, threshold: float = 0.9) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Removes highly correlated features from X_train and X_test.
 
@@ -69,34 +75,45 @@ def remove_highly_correlated_features(X_train: pd.DataFrame, X_test: pd.DataFram
 
     # Drop correlated features
     X_train_filtered = X_train.drop(columns=to_drop)
-    X_test_filtered = X_test.drop(columns=to_drop)
+
+    # apply transformation to X_test
+    if isinstance(X_test, pd.DataFrame):
+        X_test_filtered = X_test.drop(columns=to_drop)
+    else:
+        X_test_filtered = None
 
     return X_train_filtered, X_test_filtered
 
 
-def select_k_best_features(X_train, X_test, y_train, k=10):
+def select_k_best_features(X_train, y_train, X_test: pd.DataFrame=None, k=10):
     """
     Select the top k best features based on their relationship with the target variable.
 
-    Parameters:
-        X_train (pd.DataFrame): Training feature set.
-        X_test (pd.DataFrame): Testing feature set.
-        y_train (pd.Series or np.array): Target values for training data.
-        k (int): Number of best features to select.
+    :param X_train: Training feature set.
+    :param X_test: Testing feature set.
+    :param y_train: Target values for training data.
+    :param k: Number of best features to select.
 
     Returns:
         pd.DataFrame, pd.DataFrame: Transformed X_train and X_test with top k features.
     """
     selector = SelectKBest(score_func=f_classif, k=k)  # Use f_regression for regression problems
     X_train_selected = selector.fit_transform(X_train, y_train)
-    X_test_selected = selector.transform(X_test)
+
 
     # Get selected feature names
     selected_features = X_train.columns[selector.get_support()]
 
     # Convert back to DataFrame
     X_train_selected = pd.DataFrame(X_train_selected, columns=selected_features, index=X_train.index)
-    X_test_selected = pd.DataFrame(X_test_selected, columns=selected_features, index=X_test.index)
+
+    # apply transformation to X_test
+    if isinstance(X_test, pd.DataFrame):
+        X_test_selected = selector.transform(X_test)
+        X_test_selected = pd.DataFrame(X_test_selected, columns=selected_features, index=X_test.index)
+
+    else:
+        X_test_selected = None
 
     return X_train_selected, X_test_selected
 

@@ -4,10 +4,13 @@ Function for model selection using traditional machine learning methods.
 Available Functions
 -------------------
 [Public]
-evaluate_models(...): Evaluates multiple machine learning models using nested cross-validation.
-evaluate_production_model(...): Performs a final hyperparameter tuning and performs production model evaluation.
+perform_model_selection(...): Evaluates 3 different models (Random Forest, KNN, and SVM)  using a nested cross-validation to select which of these models is used for production.
+train_production_model(...): Trains the production model by performing a final hyperparameter tuning. The trained model is then evaluated on the test set.
+
 ------------------
 [Private]
+_evaluate_models(...): Evaluates multiple machine learning models using nested cross-validation.
+_evaluate_production_model(...): Performs a final hyperparameter tuning and performs production model evaluation.
 _save_results(...): Saves the results from the nested cross-validation into a .csv file.
 ------------------
 """
@@ -26,10 +29,13 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GroupShuffleSplit
 
-from constants import RANDOM_SEED
 # internal imports
+from .load import load_features
 from .cross_validation import nested_cross_val, tune_production_model
+from .feature_selection import remove_low_variance, remove_highly_correlated_features, select_k_best_features
+from constants import RANDOM_SEED
 from file_utils import create_dir
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -47,7 +53,124 @@ ESTIMATOR = 'estimator'
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train: pd.Series, norm_type: str) -> None:
+def perform_model_selection(data_path: str, balancing_type: str) -> None:
+    """
+    Evaluates 3 different models (Random Forest, KNN, and SVM)  using a nested cross-validation to select which of
+    these models is used for production. The model selection is only performed on the training data.
+    :param data_path: the path to the data. This should point to the folder containing the extracted features.
+    :param balancing_type: the data balancing type. Can be either:
+                         'main_classes': for balancing the data in such a way that each main class has the (almost) the
+                                       same amount of data. This ensures that each sub-class within the main class has
+                                       the same amount of instances.
+                         'sub_classes': for balancing that all sub-classes have the same amount of instances
+                         None: no balancing applied. Default: None
+    :return: None
+    """
+
+    for norm_type in ['none', 'minmax', 'standard']:
+
+        print(f'norm_type: {norm_type}')
+
+        # path to feature folder
+        feature_data_folder = os.path.join(data_path, f"w_1-5_sc_{norm_type}")
+
+        # load feature, labels, and subject IDs
+        X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data=balancing_type)
+
+        # split of train and test set
+        splitter = GroupShuffleSplit(test_size=0.2, n_splits=1, random_state=RANDOM_SEED)
+        train_idx, test_idx = next(splitter.split(X, y_main, groups=subject_ids))
+
+        print(f"subjects train: {subject_ids[train_idx].unique()}")
+        print(f"subjects test: {subject_ids[test_idx].unique()}")
+
+        # get train and test sets
+        X_train_all_features = X.iloc[train_idx]
+
+        # get y depending on the balancing type
+        if balancing_type == 'main_classes':
+            y_train = y_main.iloc[train_idx]
+
+        else:  # sub-class balancing
+            y_train = y_sub[train_idx]
+
+        # get the subjects for training
+        subject_ids_train = subject_ids.iloc[train_idx]
+
+        for num_features_retain in [5, 10, 15, 20, 25, 30, 35]:
+            print("\n.................................................................")
+            print(f"Testing {num_features_retain} features with norm type \'{norm_type}\'...\n")
+
+            # perform model agnostic feature selection
+            X_train, _ = remove_low_variance(X_train_all_features, X_test=None, threshold=0.1)
+            X_train, _ = remove_highly_correlated_features(X_train, X_test=None, threshold=0.9)
+            X_train, _ = select_k_best_features(X_train, y_train, X_test=None, k=num_features_retain)
+
+            print(f"Used features: {X_train.columns.values}")
+
+            # evaluate the models using main_class labels
+            _evaluate_models(X_train, y_train, subject_ids_train, norm_type=norm_type)
+
+
+def train_production_model(data_path: str, num_features_retain: int, balancing_type: str, norm_type: str) -> None:
+    """
+    Trains the production model by performing a final hyperparameter tuning. The trained model is then evaluated on the
+    test set.
+    :param data_path: the path to the data. This should point to the folder containing the extracted features.
+    :param num_features_retain: the number of features to retain after model agnostic feature selection.
+    :param balancing_type: the data balancing type. Can be either:
+                         'main_classes': for balancing the data in such a way that each main class has the (almost) the
+                                       same amount of data. This ensures that each sub-class within the main class has
+                                       the same amount of instances.
+                         'sub_classes': for balancing that all sub-classes have the same amount of instances
+                         None: no balancing applied. Default: None
+    :param norm_type: the normalization type used on the windowed data. Can either be 'minmax', 'std', or 'none'
+    :return: None
+    """
+
+    # path to feature folder (change the folder name to run the different normalization schemes)
+    feature_data_folder = os.path.join(data_path, f"w_1-5_sc_{norm_type}")
+
+    # load feature, labels, and subject IDs
+    X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data=balancing_type)
+
+    # split of train and test set
+    splitter = GroupShuffleSplit(test_size=0.2, n_splits=1, random_state=RANDOM_SEED)
+    train_idx, test_idx = next(splitter.split(X, y_main, groups=subject_ids))
+
+    # get train and test sets
+    X_train = X.iloc[train_idx]
+    X_test = X.iloc[test_idx]
+
+    print(f"subjects train: {subject_ids[train_idx].unique()}")
+    print(f"subjects test: {subject_ids[test_idx].unique()}")
+
+    # get y depending on the balancing type
+    if balancing_type == 'main_classes':
+        y_train = y_main.iloc[train_idx]
+        y_test = y_main.iloc[test_idx]
+
+    else:  # sub-class balancing
+        y_train = y_sub[train_idx]
+        y_test = y_sub[test_idx]
+
+    # get the subjects for training
+    subject_ids_train = subject_ids.iloc[train_idx]
+
+    # perform model agnostic feature selection
+    X_train, X_test = remove_low_variance(X_train, X_test, threshold=0.1)
+    X_train, X_test = remove_highly_correlated_features(X_train, X_test, threshold=0.9)
+    X_train, X_test = select_k_best_features(X_train, y_train, X_test, k=num_features_retain)
+
+    print(f"Used features: {X_train.columns.values}")
+
+    # evaluate production model
+    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, cv_splits=2)
+
+# ------------------------------------------------------------------------------------------------------------------- #
+# private functions
+# ------------------------------------------------------------------------------------------------------------------- #
+def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train: pd.Series, norm_type: str) -> None:
     """
     Evaluates multiple machine learning models using nested cross-validation.
 
@@ -90,7 +213,8 @@ def evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train
         _save_results(info_df, estimator_name=model_name, num_classes=len(y_train.unique()),
                       num_features=len(X_train.columns), norm_type=norm_type)
 
-def evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
+
+def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
                               X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series,
                               cv_splits: int = 5) -> None:
     """
@@ -136,10 +260,6 @@ def evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     joblib.dump(model, model_path)
 
 
-
-# ------------------------------------------------------------------------------------------------------------------- #
-# private functions
-# ------------------------------------------------------------------------------------------------------------------- #
 def _save_results(info_df: pd.DataFrame, estimator_name: str, num_classes: int, num_features: int, norm_type: str) -> None:
     """
     Saves the results from the nested cross-validation into a .csv file.
