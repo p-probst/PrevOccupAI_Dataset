@@ -17,12 +17,12 @@ import numpy as np
 GENERATE_SEGMENTED_DATASET = False
 EXTRACT_FEATURES = False
 ML_HAR = True
-ML_MODEL_SELECTION = True
+ML_MODEL_SELECTION = False
 ML_TRAIN_PRODUCTION_MODEL = True
 
 # definition of folder_path
-RAW_DATA_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
-OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\'
+RAW_DATA_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
+OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here
@@ -69,7 +69,7 @@ if __name__ == '__main__':
         # train production model using the number of features and the normalization type found through model selection
         if ML_TRAIN_PRODUCTION_MODEL:
             print("\ntraining and evaluating production model")
-            train_production_model(feature_data_path, num_features_retain=25, balancing_type=balancing_type, norm_type='none')
+            train_production_model(feature_data_path, num_features_retain=30, balancing_type=balancing_type, norm_type='none')
 
 
 

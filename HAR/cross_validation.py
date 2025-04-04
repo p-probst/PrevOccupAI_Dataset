@@ -139,7 +139,7 @@ def tune_production_model(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series,
     # set up cross-validation for hyperparameter tuning
     cv = GroupKFold(n_splits=cv_splits, shuffle=True, random_state=RANDOM_SEED)
     grid_search = GridSearchCV(estimator=estimator, param_grid=param_grid, scoring='accuracy',
-                               n_jobs=-1, cv=cv, verbose=1, refit=True)
+                               n_jobs=1, cv=cv, verbose=1, refit=True)
 
     # perform hyperparameter tuning
     grid_search.fit(X, y, groups=subject_ids)
