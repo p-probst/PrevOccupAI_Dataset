@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 import joblib
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay
 from sklearn.svm import SVC
@@ -67,7 +68,7 @@ def perform_model_selection(data_path: str, balancing_type: str) -> None:
     :return: None
     """
 
-    for norm_type in ['none', 'minmax', 'standard']:
+    for norm_type in ['none']:
 
         print(f'norm_type: {norm_type}')
 
@@ -94,11 +95,19 @@ def perform_model_selection(data_path: str, balancing_type: str) -> None:
         else:  # sub-class balancing
             y_train = y_sub[train_idx]
 
+            # add label encoding, as in this case the labels are non-consecutive
+            le = LabelEncoder()
+            y_train = pd.Series(le.fit_transform(y_train))
+
+
+
+
         # get the subjects for training
         subject_ids_train = subject_ids.iloc[train_idx]
 
-        for num_features_retain in [5, 10, 15, 20, 25, 30, 35]:
+        for num_features_retain in [5]:
             print("\n.................................................................")
+            print(f"number of classes: {np.unique(y_train)}")
             print(f"Testing {num_features_retain} features with norm type \'{norm_type}\'...\n")
 
             # perform model agnostic feature selection
@@ -154,6 +163,11 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
         y_train = y_sub[train_idx]
         y_test = y_sub[test_idx]
 
+        # add label encoding, as in this case the labels are non-consecutive
+        le = LabelEncoder()
+        y_train = pd.Series(le.fit_transform(y_train))
+        y_test = pd.Series(le.fit_transform(y_test))
+
     # get the subjects for training
     subject_ids_train = subject_ids.iloc[train_idx]
 
@@ -190,13 +204,13 @@ def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_trai
          KNN: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (KNN, KNeighborsClassifier(algorithm='ball_tree'))]),
                PARAM_GRID: [{f'{KNN}__n_neighbors': list(range(1, 15)), f'{KNN}__p': [1, 2]}]},
 
-         SVM: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC(random_state=RANDOM_SEED))]), PARAM_GRID: [
-             {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
-              f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
-             {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]},
+         # SVM: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC(random_state=RANDOM_SEED))]), PARAM_GRID: [
+         #     {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
+         #      f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
+         #     {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]},
 
-         RF: {ESTIMATOR: RandomForestClassifier(random_state=RANDOM_SEED), PARAM_GRID: [
-             {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]}
+         # RF: {ESTIMATOR: RandomForestClassifier(random_state=RANDOM_SEED), PARAM_GRID: [
+         #     {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]}
     }
 
     for model_name, param_dict in model_dict.items():
@@ -274,9 +288,9 @@ def _save_results(info_df: pd.DataFrame, estimator_name: str, num_classes: int, 
     project_path = os.getcwd()
 
     # create results directory (if it doesn't exist)
-    folder_path = create_dir(project_path, os.path.join("Results", "ML"))
+    folder_path = create_dir(project_path, os.path.join("Results", "ML", f"num_classes_{num_classes}"))
 
     # create full file path
-    file_path = os.path.join(folder_path, f'{estimator_name}_cl{num_classes}_f{num_features}_wNorm-{norm_type}.csv')
+    file_path = os.path.join(folder_path,f'{estimator_name}_f{num_features}_wNorm-{norm_type}.csv')
 
     info_df.to_csv(file_path, sep=';', index=False)

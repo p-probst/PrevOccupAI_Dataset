@@ -159,6 +159,9 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
                     print(f"({file_num}.1) loading file {file_num}/{num_files}: {file}")
                     data, sensor_names = load_data(os.path.join(subject_folder_path, file))
 
+                    # remove time column
+                    data = data[:, 1:]
+
                     # (2) pre-process the data
                     print(f"({file_num}.2) pre-processing")
                     data = _pre_process_sensors(data, sensor_names)
@@ -392,8 +395,8 @@ def _pre_process_sensors(data_array: np.array, sensor_names: List[str], fs=100) 
     :return:
     """
 
-    # remove the time column from the data
-    processed_data = data_array[:, 1:]
+    # make a copy to not override the original data
+    processed_data = data_array.copy()
 
     # process each sensor
     for valid_sensor in VALID_SENSORS:

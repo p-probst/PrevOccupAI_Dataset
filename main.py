@@ -15,10 +15,10 @@ import numpy as np
 # constants
 # ------------------------------------------------------------------------------------------------------------------- #
 GENERATE_SEGMENTED_DATASET = False
-EXTRACT_FEATURES = False
+EXTRACT_FEATURES = True
 ML_HAR = True
-ML_MODEL_SELECTION = False
-ML_TRAIN_PRODUCTION_MODEL = True
+ML_MODEL_SELECTION = True
+ML_TRAIN_PRODUCTION_MODEL = False
 
 # definition of folder_path
 RAW_DATA_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
