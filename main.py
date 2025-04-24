@@ -15,7 +15,7 @@ import numpy as np
 # constants
 # ------------------------------------------------------------------------------------------------------------------- #
 GENERATE_SEGMENTED_DATASET = False
-EXTRACT_FEATURES = True
+EXTRACT_FEATURES = False
 ML_HAR = True
 ML_MODEL_SELECTION = True
 ML_TRAIN_PRODUCTION_MODEL = False
@@ -50,7 +50,7 @@ if __name__ == '__main__':
     if ML_HAR:
 
         # setting variables for run
-        balancing_type = 'main_classes'
+        balancing_type = 'sub_classes'
 
         print("HAR model training/test")
 

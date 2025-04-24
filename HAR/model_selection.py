@@ -68,7 +68,7 @@ def perform_model_selection(data_path: str, balancing_type: str) -> None:
     :return: None
     """
 
-    for norm_type in ['none']:
+    for norm_type in ['none', 'minmax', 'standard']:
 
         print(f'norm_type: {norm_type}')
 
@@ -99,15 +99,12 @@ def perform_model_selection(data_path: str, balancing_type: str) -> None:
             le = LabelEncoder()
             y_train = pd.Series(le.fit_transform(y_train))
 
-
-
-
         # get the subjects for training
         subject_ids_train = subject_ids.iloc[train_idx]
 
-        for num_features_retain in [5]:
+        for num_features_retain in [5, 10, 15, 20, 25, 30, 35]:
             print("\n.................................................................")
-            print(f"number of classes: {np.unique(y_train)}")
+            print(f"Classes used: {np.unique(y_train)}")
             print(f"Testing {num_features_retain} features with norm type \'{norm_type}\'...\n")
 
             # perform model agnostic feature selection
@@ -176,6 +173,7 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     X_train, X_test = remove_highly_correlated_features(X_train, X_test, threshold=0.9)
     X_train, X_test = select_k_best_features(X_train, y_train, X_test, k=num_features_retain)
 
+    print(f"Classes used: {np.unique(y_train)}")
     print(f"Used features: {X_train.columns.values}")
 
     # evaluate production model
@@ -204,13 +202,13 @@ def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_trai
          KNN: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (KNN, KNeighborsClassifier(algorithm='ball_tree'))]),
                PARAM_GRID: [{f'{KNN}__n_neighbors': list(range(1, 15)), f'{KNN}__p': [1, 2]}]},
 
-         # SVM: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC(random_state=RANDOM_SEED))]), PARAM_GRID: [
-         #     {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
-         #      f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
-         #     {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]},
+         SVM: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC(random_state=RANDOM_SEED))]), PARAM_GRID: [
+             {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
+              f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
+             {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]},
 
-         # RF: {ESTIMATOR: RandomForestClassifier(random_state=RANDOM_SEED), PARAM_GRID: [
-         #     {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]}
+         RF: {ESTIMATOR: RandomForestClassifier(random_state=RANDOM_SEED), PARAM_GRID: [
+             {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]}
     }
 
     for model_name, param_dict in model_dict.items():
