@@ -73,7 +73,7 @@ def perform_model_selection(data_path: str, balancing_type: str) -> None:
         print(f'norm_type: {norm_type}')
 
         # path to feature folder
-        feature_data_folder = os.path.join(data_path, f"w_1-5_sc_{norm_type}")
+        feature_data_folder = os.path.join(data_path, f"w_150_sc_{norm_type}")
 
         # load feature, labels, and subject IDs
         X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data=balancing_type)

@@ -117,7 +117,7 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
     json_dict = {}
 
     # generate output path (folder) where all the feature files are stored
-    output_path = _generate_outfolder(features_data_path, window_scaler, window_size)
+    output_path = _generate_outfolder(features_data_path, window_scaler, int(window_size*fs))
 
     # cycle over the subjects
     for sub_num, subject in enumerate(subject_folders): # subject_folders
@@ -341,19 +341,19 @@ def _validate_activity_input(activities: List[str]) -> List[str]:
     return activities
 
 
-def _generate_outfolder(features_data_path: str, window_scaler: str, window_size: float) -> str:
+def _generate_outfolder(features_data_path: str, window_scaler: str, window_size_samples: float) -> str:
     """
     Generates the folders for storing the data
     :param features_data_path: data path to where the data should be stored
     :param window_scaler: the window scaler
-    :param window_size: the window size
-    :return:
+    :param window_size_samples: the window size in samples
+    :return: the output folder name
     """
 
     if window_scaler is None:
-        folder_name = f'w_{str(window_size).replace(".", "-")}_sc_none'
+        folder_name = f'w_{window_size_samples}_sc_none'
     else:
-        folder_name = f'w_{str(window_size).replace(".", "-")}_sc_{window_scaler}'
+        folder_name = f'w_{window_size_samples}_sc_{window_scaler}'
 
     output_path = create_dir(features_data_path, os.path.join('extracted_features', folder_name))
 

@@ -15,14 +15,14 @@ import numpy as np
 # constants
 # ------------------------------------------------------------------------------------------------------------------- #
 GENERATE_SEGMENTED_DATASET = False
-EXTRACT_FEATURES = False
+EXTRACT_FEATURES = True
 ML_HAR = True
 ML_MODEL_SELECTION = True
 ML_TRAIN_PRODUCTION_MODEL = False
 
 # definition of folder_path
-RAW_DATA_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
-OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\'
+RAW_DATA_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
+OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here
@@ -63,6 +63,7 @@ if __name__ == '__main__':
         # perform model selection
         if ML_MODEL_SELECTION:
 
+            # TODO: pass window size in samples to choose the folder
             print("Evaluating different models (Random Forest vs. KNN vs. SVM)")
             perform_model_selection(feature_data_path, balancing_type=balancing_type)
 
