@@ -21,8 +21,8 @@ ML_MODEL_SELECTION = True
 ML_TRAIN_PRODUCTION_MODEL = False
 
 # definition of folder_path
-RAW_DATA_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
-OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\'
+RAW_DATA_FOLDER_PATH = 'E:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
+OUTPUT_FOLDER_PATH = 'E:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here
@@ -63,20 +63,14 @@ if __name__ == '__main__':
         # perform model selection
         if ML_MODEL_SELECTION:
 
-            # TODO: @Sara pass window size in samples to setup folder for storing data
-            #  (choose correct feature folder + avoid overriding results).
-            #  The parameter name should be window_size_samples --> please add it to the docstring
             print("Evaluating different models (Random Forest vs. KNN vs. SVM)")
-            perform_model_selection(feature_data_path, balancing_type=balancing_type)
+            perform_model_selection(feature_data_path, balancing_type=balancing_type, window_size_samples=500)
 
         # train production model using the number of features and the normalization type found through model selection
         if ML_TRAIN_PRODUCTION_MODEL:
 
-            # TODO: @Sara (basically the same as above) pass window size in samples to setup folder for storing data
-            #  (choose correct feature folder + avoid overriding the model).
-            #  The parameter name should be window_size_samples --> please add it to the docstring
             print("\ntraining and evaluating production model")
-            train_production_model(feature_data_path, num_features_retain=30, balancing_type=balancing_type, norm_type='none')
+            train_production_model(feature_data_path, num_features_retain=30, balancing_type=balancing_type, norm_type='none', window_size_samples=500)
 
 
 

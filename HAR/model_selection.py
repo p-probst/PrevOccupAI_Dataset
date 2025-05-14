@@ -54,7 +54,7 @@ ESTIMATOR = 'estimator'
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def perform_model_selection(data_path: str, balancing_type: str) -> None:
+def perform_model_selection(data_path: str, balancing_type: str, window_size_samples: int) -> None:
     """
     Evaluates 3 different models (Random Forest, KNN, and SVM)  using a nested cross-validation to select which of
     these models is used for production. The model selection is only performed on the training data.
@@ -65,6 +65,7 @@ def perform_model_selection(data_path: str, balancing_type: str) -> None:
                                        the same amount of instances.
                          'sub_classes': for balancing that all sub-classes have the same amount of instances
                          None: no balancing applied. Default: None
+    :param window_size_samples: the number of samples per window. Used for creating folder and file names.
     :return: None
     """
 
@@ -72,9 +73,8 @@ def perform_model_selection(data_path: str, balancing_type: str) -> None:
 
         print(f'norm_type: {norm_type}')
 
-        # TODO: @Sara set use the window size in samples as variable in this f-string
         # path to feature folder
-        feature_data_folder = os.path.join(data_path, f"w_150_sc_{norm_type}")
+        feature_data_folder = os.path.join(data_path, f"w_{window_size_samples}_sc_{norm_type}")
 
         # load feature, labels, and subject IDs
         X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data=balancing_type)
@@ -116,12 +116,12 @@ def perform_model_selection(data_path: str, balancing_type: str) -> None:
 
             print(f"Used features: {X_train.columns.values}")
 
-            # TODO: @Sara the window_size_samples has to be passed here as well to create the folder for storing the results
             # evaluate the models using main_class labels
-            _evaluate_models(X_train, y_train, subject_ids_train, norm_type=norm_type)
+            _evaluate_models(X_train, y_train, subject_ids_train, norm_type=norm_type, window_size_samples=window_size_samples)
 
 
-def train_production_model(data_path: str, num_features_retain: int, balancing_type: str, norm_type: str) -> None:
+def train_production_model(data_path: str, num_features_retain: int, balancing_type: str, norm_type: str,
+                           window_size_samples: int) -> None:
     """
     Trains the production model by performing a final hyperparameter tuning. The trained model is then evaluated on the
     test set.
@@ -134,12 +134,12 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
                          'sub_classes': for balancing that all sub-classes have the same amount of instances
                          None: no balancing applied. Default: None
     :param norm_type: the normalization type used on the windowed data. Can either be 'minmax', 'std', or 'none'
+    :param window_size_samples: the number of samples per window. Used for creating folder and file names.
     :return: None
     """
 
-    # TODO: @Sara set use the window size in samples as variable in this f-string
     # path to feature folder (change the folder name to run the different normalization schemes)
-    feature_data_folder = os.path.join(data_path, f"w_150_sc_{norm_type}")
+    feature_data_folder = os.path.join(data_path, f"w_{window_size_samples}_sc_{norm_type}")
 
     # load feature, labels, and subject IDs
     X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data=balancing_type)
@@ -181,14 +181,14 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     print(f"Classes used: {np.unique(y_train)}")
     print(f"Used features: {X_train.columns.values}")
 
-    # TODO: @Sara the window_size_samples has to be passed here as well to save the model
     # evaluate production model
-    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, cv_splits=2)
+    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, window_size_samples, cv_splits=2)
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train: pd.Series, norm_type: str) -> None:
+def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train: pd.Series, norm_type: str,
+                     window_size_samples: int) -> None:
     """
     Evaluates multiple machine learning models using nested cross-validation.
 
@@ -200,6 +200,7 @@ def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_trai
     :param y_train: pandas.Series containing the labels
     :param subject_ids_train: pandas.Series containing the subject IDs
     :param norm_type: the normalization type used on the windowed data. Can either be 'minmax', 'std', or 'none'
+    :param window_size_samples: the number of samples per window. Used for creating folder and file names.
     :return: None
     """
 
@@ -229,12 +230,12 @@ def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_trai
 
         # save the results
         _save_results(info_df, estimator_name=model_name, num_classes=len(y_train.unique()),
-                      num_features=len(X_train.columns), norm_type=norm_type)
+                      num_features=len(X_train.columns), norm_type=norm_type, window_size_samples=window_size_samples)
 
 
 def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
                               X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series,
-                              cv_splits: int = 5) -> None:
+                               window_size_samples: int, cv_splits: int = 5) -> None:
     """
     Performs a final hyperparameter tuning on the production model that was chosen based on the results from
     evaluate_models(...) and evaluates the model on the test data.
@@ -243,6 +244,7 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     :param X_test: pandas.DataFrame containing the test data
     :param y_test: pandas.Series containing the training labels
     :param subject_ids_train: pandas.Series containing the subject IDs
+    :param window_size_samples: the number of samples per window. Used for creating folder and file names.
     :param cv_splits: the number of cross-validation splits for the gridsearch. Default: 5
     :return: None
     """
@@ -271,37 +273,37 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     plt.title("Confusion Matrix | Test set")
     plt.show()
 
-    # TODO: @Sara please implement saving of the confusion matrix through code. They should be saved into the same
-    #  folder as the model
-
-    # TODO: @Sara here the window_size_samples has to be added to the model name. Use a f-string for that.
-    #  Please create also a folder that stores the models. This way they are neatly organized. The folder name can be
-    #  "trained_models". It should be within the "HAR" folder". Maybe a sub-folder where the model and its confusion
-    #  matrix are stored is necessary
     # save model
     # get the project path
     project_path = os.getcwd()
-    model_path = os.path.join(project_path, "HAR", "HAR_model.joblib")
+
+    # generate a folder path
+    folder_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{window_size_samples}_samples"))
+
+    # save model and correspondent confusion trix
+    model_path = os.path.join(folder_path, f"HAR_model_{window_size_samples}.joblib")
+    confusion_matrix_path = os.path.join(folder_path, f"ConfusionMatrix_{window_size_samples}.png")
     joblib.dump(model, model_path)
+    plt.savefig(confusion_matrix_path)
 
 
-def _save_results(info_df: pd.DataFrame, estimator_name: str, num_classes: int, num_features: int, norm_type: str) -> None:
+def _save_results(info_df: pd.DataFrame, estimator_name: str, num_classes: int, num_features: int, norm_type: str,
+                  window_size_samples: int) -> None:
     """
     Saves the results from the nested cross-validation into a .csv file.
     :param info_df: pandas.DataFrame containing the information from the nested cross-validation
     :param estimator_name: the name of the estimator used in the nested cross-validation
     :param num_features: the number of features used
     :param norm_type: the normalization type used.
+    :param window_size_samples: the number of samples per window. Used for creating folder and file names.
     :return: None
     """
 
     # get the path to the current project
     project_path = os.getcwd()
 
-    # TODO: @Sara here the folder that has the window size as name should be added.
-    #  It could be something like os.path.join("Results", "ML",f"{window_size_samples}", f"num_classes_{num_classes}"
     # create results directory (if it doesn't exist)
-    folder_path = create_dir(project_path, os.path.join("Results", "ML", f"num_classes_{num_classes}"))
+    folder_path = create_dir(project_path, os.path.join("Results", "ML", f"{window_size_samples}_samples", f"num_classes_{num_classes}"))
 
     # create full file path
     file_path = os.path.join(folder_path,f'{estimator_name}_f{num_features}_wNorm-{norm_type}.csv')
