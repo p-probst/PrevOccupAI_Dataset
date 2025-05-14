@@ -73,6 +73,11 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
         raise ValueError(f"The data balancing type you chose is not valid. Provided type: {balance_data}."
                          f"\nPlease choose from the following {[MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING, None]}.")
 
+    # TODO: @Sara you can use instances_per_sub_class to calculate the the number of instances.
+    #  Calculate the instances_per_subject and total_num_instances. You can then just print the results.
+    #  Please also print the instances for each sub_class and format the print statement nicely.
+    #  The calculation should be dynamic meaning, that you should extract the number of subjects dynamically from the code below
+    #  (you should be able to get it from subject_files after the duplicates have been removed)
     # retrieve the feature names and the instances per sub-class for data balancing (if needed)
     feature_names, instances_per_sub_class = _get_feature_names_and_instances(feature_data_path, balance_data=balance_data)
 
@@ -148,7 +153,7 @@ def _get_feature_names_and_instances(feature_data_path: str, balance_data: str =
 
     :return: A tuple containing:
              - A list of feature names extracted from the JSON file.
-             - A tuple (instances_sit, instances_walk, instances_stand) representing
+             - A tuple (instances_sit, instances_stand, instances_walk) representing
                the number of instances per sub-class based on the chosen balancing strategy.
                Returns `None` if no balancing is applied.
     """

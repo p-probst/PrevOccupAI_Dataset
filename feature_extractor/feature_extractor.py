@@ -96,6 +96,9 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
     # check validity of provided activities
     activities = _validate_activity_input(activities)
 
+    #TODO: @Sara create a validity check for the different scaler options. They should be defined in window.py.
+    # You can perform the same check as I already did in the window_scaling function defined in window.py
+
     # check output file type
     if output_file_type not in VALID_FILE_TYPES:
         # set output filetype to numpy file

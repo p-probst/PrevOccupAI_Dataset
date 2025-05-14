@@ -15,7 +15,7 @@ import numpy as np
 # constants
 # ------------------------------------------------------------------------------------------------------------------- #
 GENERATE_SEGMENTED_DATASET = False
-EXTRACT_FEATURES = True
+EXTRACT_FEATURES = False
 ML_HAR = True
 ML_MODEL_SELECTION = True
 ML_TRAIN_PRODUCTION_MODEL = False
@@ -50,7 +50,7 @@ if __name__ == '__main__':
     if ML_HAR:
 
         # setting variables for run
-        balancing_type = 'sub_classes'
+        balancing_type = 'main_classes'
 
         print("HAR model training/test")
 
@@ -63,12 +63,18 @@ if __name__ == '__main__':
         # perform model selection
         if ML_MODEL_SELECTION:
 
-            # TODO: pass window size in samples to choose the folder
+            # TODO: @Sara pass window size in samples to setup folder for storing data
+            #  (choose correct feature folder + avoid overriding results).
+            #  The parameter name should be window_size_samples --> please add it to the docstring
             print("Evaluating different models (Random Forest vs. KNN vs. SVM)")
             perform_model_selection(feature_data_path, balancing_type=balancing_type)
 
         # train production model using the number of features and the normalization type found through model selection
         if ML_TRAIN_PRODUCTION_MODEL:
+
+            # TODO: @Sara (basically the same as above) pass window size in samples to setup folder for storing data
+            #  (choose correct feature folder + avoid overriding the model).
+            #  The parameter name should be window_size_samples --> please add it to the docstring
             print("\ntraining and evaluating production model")
             train_production_model(feature_data_path, num_features_retain=30, balancing_type=balancing_type, norm_type='none')
 

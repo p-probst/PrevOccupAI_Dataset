@@ -72,6 +72,7 @@ def perform_model_selection(data_path: str, balancing_type: str) -> None:
 
         print(f'norm_type: {norm_type}')
 
+        # TODO: @Sara set use the window size in samples as variable in this f-string
         # path to feature folder
         feature_data_folder = os.path.join(data_path, f"w_150_sc_{norm_type}")
 
@@ -87,6 +88,7 @@ def perform_model_selection(data_path: str, balancing_type: str) -> None:
 
         # get train and test sets
         X_train_all_features = X.iloc[train_idx]
+        # TODO: @Sara Please print here the total number of instances for training
 
         # get y depending on the balancing type
         if balancing_type == 'main_classes':
@@ -114,6 +116,7 @@ def perform_model_selection(data_path: str, balancing_type: str) -> None:
 
             print(f"Used features: {X_train.columns.values}")
 
+            # TODO: @Sara the window_size_samples has to be passed here as well to create the folder for storing the results
             # evaluate the models using main_class labels
             _evaluate_models(X_train, y_train, subject_ids_train, norm_type=norm_type)
 
@@ -134,8 +137,9 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     :return: None
     """
 
+    # TODO: @Sara set use the window size in samples as variable in this f-string
     # path to feature folder (change the folder name to run the different normalization schemes)
-    feature_data_folder = os.path.join(data_path, f"w_1-5_sc_{norm_type}")
+    feature_data_folder = os.path.join(data_path, f"w_150_sc_{norm_type}")
 
     # load feature, labels, and subject IDs
     X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data=balancing_type)
@@ -147,6 +151,7 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     # get train and test sets
     X_train = X.iloc[train_idx]
     X_test = X.iloc[test_idx]
+    # TODO: @Sara Please print here the total number of instances for training
 
     print(f"subjects train: {subject_ids[train_idx].unique()}")
     print(f"subjects test: {subject_ids[test_idx].unique()}")
@@ -176,6 +181,7 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     print(f"Classes used: {np.unique(y_train)}")
     print(f"Used features: {X_train.columns.values}")
 
+    # TODO: @Sara the window_size_samples has to be passed here as well to save the model
     # evaluate production model
     _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, cv_splits=2)
 
@@ -265,6 +271,13 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     plt.title("Confusion Matrix | Test set")
     plt.show()
 
+    # TODO: @Sara please implement saving of the confusion matrix through code. They should be saved into the same
+    #  folder as the model
+
+    # TODO: @Sara here the window_size_samples has to be added to the model name. Use a f-string for that.
+    #  Please create also a folder that stores the models. This way they are neatly organized. The folder name can be
+    #  "trained_models". It should be within the "HAR" folder". Maybe a sub-folder where the model and its confusion
+    #  matrix are stored is necessary
     # save model
     # get the project path
     project_path = os.getcwd()
@@ -285,6 +298,8 @@ def _save_results(info_df: pd.DataFrame, estimator_name: str, num_classes: int, 
     # get the path to the current project
     project_path = os.getcwd()
 
+    # TODO: @Sara here the folder that has the window size as name should be added.
+    #  It could be something like os.path.join("Results", "ML",f"{window_size_samples}", f"num_classes_{num_classes}"
     # create results directory (if it doesn't exist)
     folder_path = create_dir(project_path, os.path.join("Results", "ML", f"num_classes_{num_classes}"))
 
