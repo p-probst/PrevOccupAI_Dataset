@@ -7,6 +7,7 @@ Available Functions
 get_sliding_windows_indices(...): Function to obtain window indices with an adjustable overlap between windows
 window_data(...): Function to slice the data into windows defined by indices
 window_scaling(...): Performs scaling on each window using the provided scaler.
+validate_scaler_input(...): Checks whether the provided scaler is valid
 ------------------
 [Private]
 None
@@ -97,10 +98,7 @@ def window_scaling(windowed_data: np.array, scaler: str = 'minmax') -> np.array:
     :return: The windowed data, but with each window scaled according to the provided scaler.
     """
     # check input validity
-    if scaler not in SCALERS:
-
-        raise ValueError(f"The window scaler you have chosen is not supported. Chosen scaler: {scaler}."
-                         f"\nPlease choose from the following: {SCALERS}")
+    validate_scaler_input(scaler)
 
     if windowed_data.ndim != 3:
 
@@ -124,6 +122,22 @@ def window_scaling(windowed_data: np.array, scaler: str = 'minmax') -> np.array:
         scaled_data = (windowed_data - mean_vals) / std_vals
 
     return scaled_data
+
+
+def validate_scaler_input(scaler: str) -> None:
+    """
+    Checks whether the provided scaler is valid.
+    :param scaler: the type of scaler. Can be either 'minmax' (min-max scaling) or 'standard' (standardizing).
+                   Default: 'minmax'
+    :return: None
+    """
+
+    # check input validity
+    if scaler not in SCALERS:
+
+        raise ValueError(f"The window scaler you have chosen is not supported. Chosen scaler: {scaler}."
+                         f"\nPlease choose from the following: {SCALERS}")
+
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #

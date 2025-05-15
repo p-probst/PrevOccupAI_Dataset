@@ -73,11 +73,6 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
         raise ValueError(f"The data balancing type you chose is not valid. Provided type: {balance_data}."
                          f"\nPlease choose from the following {[MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING, None]}.")
 
-    # TODO: @Sara you can use instances_per_sub_class to calculate the the number of instances.
-    #  Calculate the instances_per_subject and total_num_instances. You can then just print the results.
-    #  Please also print the instances for each sub_class and format the print statement nicely.
-    #  The calculation should be dynamic meaning, that you should extract the number of subjects dynamically from the code below
-    #  (you should be able to get it from subject_files after the duplicates have been removed)
     # retrieve the feature names and the instances per sub-class for data balancing (if needed)
     feature_names, instances_per_sub_class = _get_feature_names_and_instances(feature_data_path, balance_data=balance_data)
 
@@ -106,6 +101,8 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
         # load the file
         subject_features = _load_file(file_path, file_type)
 
+        print(f"Balancing data for subject: {subject_file.split('.')[0]}")
+
         # perform balancing if needed
         if instances_per_sub_class:
 
@@ -114,6 +111,8 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
                                                      instances_sit=instances_per_sub_class[0],
                                                      instances_stand=instances_per_sub_class[1],
                                                      instances_walk=instances_per_sub_class[2])
+
+            print(f"Total number of instances: {subject_features.shape[0]}")
 
         # generate subject id (needed for groupKFold)
         subject_id = [subject_file.split('.')[0]] * len(subject_features)
@@ -124,6 +123,7 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
 
     # combine all data to one array and transform it to a pandas.DataFrame
     loaded_features = pd.DataFrame(np.vstack(loaded_features), columns=feature_names)
+    print(f"Total number of instances: {loaded_features.shape[0]} over {len(subject_files)} subjects")
 
     # get the main and sub-classes
     main_class_labels = loaded_features[MAIN_LABEL_KEY].astype(int)
@@ -310,8 +310,14 @@ def _balance_subject_data(subject_features: np.array, feature_names: List[str], 
     # list for holding the indices for each sub_class
     indices_for_balancing = []
 
+    # list for holding the existing subclasses
+    list_subclass = []
+
     # cycle over the unique labels
     for sub_class_label in np.unique(sub_class_labels):
+
+        # add the subclass to the list
+        list_subclass.append(sub_class_label)
 
         # get the indices of the class
         class_indices = np.where(sub_class_labels == sub_class_label)[0]
@@ -323,14 +329,19 @@ def _balance_subject_data(subject_features: np.array, feature_names: List[str], 
         if sub_class_label in SUB_ACTIVITIES_STAND_LABELS:
 
             indices_for_balancing.append(class_indices[:instances_stand])
+            num_instances = instances_stand
 
         elif sub_class_label in SUB_ACTIVITIES_WALK_LABELS:
 
             indices_for_balancing.append(class_indices[:instances_walk])
+            num_instances = instances_walk
 
         else:  # sit
 
             indices_for_balancing.append(class_indices[:instances_sit])
+            num_instances = instances_sit
+
+        print(f"Subclass {sub_class_label}: {num_instances} instances")
 
     # concatenate all indices
     indices_for_balancing = np.concatenate(indices_for_balancing)

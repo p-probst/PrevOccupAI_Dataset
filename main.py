@@ -15,8 +15,8 @@ import numpy as np
 # constants
 # ------------------------------------------------------------------------------------------------------------------- #
 GENERATE_SEGMENTED_DATASET = False
-EXTRACT_FEATURES = False
-ML_HAR = True
+EXTRACT_FEATURES = True
+ML_HAR = False
 ML_MODEL_SELECTION = True
 ML_TRAIN_PRODUCTION_MODEL = False
 

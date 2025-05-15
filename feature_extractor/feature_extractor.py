@@ -40,7 +40,7 @@ from constants import VALID_ACTIVITIES, \
     SENSOR_COLS_JSON, LOADED_SENSORS_KEY, CLASS_INSTANCES_JSON, MAIN_LABEL_KEY, SUB_LABEL_KEY,\
     ACTIVITY_MAIN_SUB_CLASS, MAIN_CLASS_KEY
 from raw_data_processor import slerp_smoothing, pre_process_inertial_data
-from .window import get_sliding_windows_indices, window_data, window_scaling
+from .window import get_sliding_windows_indices, window_data, window_scaling, validate_scaler_input
 from .quaternion_features import geodesic_distance
 from file_utils import remove_file_duplicates, create_dir, load_json_file
 
@@ -96,8 +96,9 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
     # check validity of provided activities
     activities = _validate_activity_input(activities)
 
-    #TODO: @Sara create a validity check for the different scaler options. They should be defined in window.py.
-    # You can perform the same check as I already did in the window_scaling function defined in window.py
+    # check validity of the provided scaler if not None
+    if window_scaler:
+        validate_scaler_input(window_scaler)
 
     # check output file type
     if output_file_type not in VALID_FILE_TYPES:
