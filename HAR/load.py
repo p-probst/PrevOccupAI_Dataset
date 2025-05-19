@@ -92,6 +92,9 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
     loaded_features = []
     loaded_subject_ids = []
 
+    # variable to hold the number of instances per subject
+    instances_per_subject = None
+
     # cycle over the subject files
     for subject_file in tqdm(subject_files, desc="loading feature data"):
 
@@ -100,8 +103,6 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
 
         # load the file
         subject_features = _load_file(file_path, file_type)
-
-        print(f"Balancing data for subject: {subject_file.split('.')[0]}")
 
         # perform balancing if needed
         if instances_per_sub_class:
@@ -112,8 +113,7 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
                                                      instances_stand=instances_per_sub_class[1],
                                                      instances_walk=instances_per_sub_class[2])
 
-            print(f"Total number of instances: {subject_features.shape[0]}")
-
+        instances_per_subject = subject_features.shape[0]
         # generate subject id (needed for groupKFold)
         subject_id = [subject_file.split('.')[0]] * len(subject_features)
 
@@ -123,6 +123,7 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
 
     # combine all data to one array and transform it to a pandas.DataFrame
     loaded_features = pd.DataFrame(np.vstack(loaded_features), columns=feature_names)
+    print(f"Total number of instances per subject: {instances_per_subject}")
     print(f"Total number of instances: {loaded_features.shape[0]} over {len(subject_files)} subjects")
 
     # get the main and sub-classes
@@ -340,8 +341,6 @@ def _balance_subject_data(subject_features: np.array, feature_names: List[str], 
 
             indices_for_balancing.append(class_indices[:instances_sit])
             num_instances = instances_sit
-
-        print(f"Subclass {sub_class_label}: {num_instances} instances")
 
     # concatenate all indices
     indices_for_balancing = np.concatenate(indices_for_balancing)
