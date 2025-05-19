@@ -330,17 +330,14 @@ def _balance_subject_data(subject_features: np.array, feature_names: List[str], 
         if sub_class_label in SUB_ACTIVITIES_STAND_LABELS:
 
             indices_for_balancing.append(class_indices[:instances_stand])
-            num_instances = instances_stand
 
         elif sub_class_label in SUB_ACTIVITIES_WALK_LABELS:
 
             indices_for_balancing.append(class_indices[:instances_walk])
-            num_instances = instances_walk
 
         else:  # sit
 
             indices_for_balancing.append(class_indices[:instances_sit])
-            num_instances = instances_sit
 
     # concatenate all indices
     indices_for_balancing = np.concatenate(indices_for_balancing)
