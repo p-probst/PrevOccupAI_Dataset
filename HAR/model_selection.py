@@ -171,8 +171,9 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
         y_train = pd.Series(le.fit_transform(y_train))
         y_test = pd.Series(le.fit_transform(y_test))
 
-    # get the subjects for training
+    # get the subjects for training and testing
     subject_ids_train = subject_ids.iloc[train_idx]
+    subject_ids_test = subject_ids.iloc[test_idx]
 
     # perform model agnostic feature selection
     X_train, X_test = remove_low_variance(X_train, X_test, threshold=0.1)
@@ -183,7 +184,7 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     print(f"Used features: {X_train.columns.values}")
 
     # evaluate production model
-    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, window_size_samples, cv_splits=2)
+    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, subject_ids_test, window_size_samples, cv_splits=2)
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
@@ -236,7 +237,7 @@ def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_trai
 
 def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
                               X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series,
-                               window_size_samples: int, cv_splits: int = 5) -> None:
+                               subject_ids_test: pd.Series, window_size_samples: int, cv_splits: int = 5) -> None:
     """
     Performs a final hyperparameter tuning on the production model that was chosen based on the results from
     evaluate_models(...) and evaluates the model on the test data.
@@ -244,7 +245,8 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     :param y_train: pandas.Series containing the training labels
     :param X_test: pandas.DataFrame containing the test data
     :param y_test: pandas.Series containing the training labels
-    :param subject_ids_train: pandas.Series containing the subject IDs
+    :param subject_ids_train: pandas.Series containing the train subject IDs
+    :param subject_ids_test: pandas.Series containing the test subject IDs
     :param window_size_samples: the number of samples per window. Used for creating folder and file names.
     :param cv_splits: the number of cross-validation splits for the gridsearch. Default: 5
     :return: None
@@ -286,6 +288,31 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     confusion_matrix_path = os.path.join(folder_path, f"ConfusionMatrix_{window_size_samples}.png")
     joblib.dump(model, model_path)
     plt.savefig(confusion_matrix_path)
+
+    # test the production model on each test subject individually
+    # cycle over the unique test subject ids
+    for test_subject_id in subject_ids_test.unique():
+
+        # get the indices of each test subject
+        test_subject_indices = np.where(subject_ids_test == test_subject_id)[0]
+
+        # get the X and y test data
+        X_test_subject = X_test.iloc[test_subject_indices]
+        y_test_subject = y_test.iloc[test_subject_indices]
+
+        # get test accuracy for the test subject
+        subject_test_acc = accuracy_score(y_true=y_test_subject, y_pred=model.predict(X_test_subject))
+
+        print(f"Model accuracy for test subject {test_subject_id}: {subject_test_acc} %")
+
+        # plot confusion matrix
+        ConfusionMatrixDisplay.from_estimator(model, X_test, y_test)
+        plt.title(f"Confusion Matrix | Subject {test_subject_id}")
+        plt.show()
+
+        # save confusion matrix
+        subject_confusion_matrix_path = os.path.join(folder_path, f"ConfusionMatrix_{window_size_samples}_subject_{test_subject_id}.png")
+        plt.savefig(subject_confusion_matrix_path)
 
 
 def _save_results(info_df: pd.DataFrame, estimator_name: str, num_classes: int, num_features: int, norm_type: str,
