@@ -31,6 +31,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GroupShuffleSplit
+from sklearn.base import ClassifierMixin
 
 # internal imports
 from .load import load_features
@@ -184,7 +185,7 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     print(f"Used features: {X_train.columns.values}")
 
     # evaluate production model
-    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, subject_ids_test, window_size_samples, cv_splits=2)
+    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, window_size_samples, cv_splits=2)
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
@@ -237,7 +238,7 @@ def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_trai
 
 def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
                               X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series,
-                               subject_ids_test: pd.Series, window_size_samples: int, cv_splits: int = 5) -> None:
+                               window_size_samples: int, cv_splits: int = 5) -> None:
     """
     Performs a final hyperparameter tuning on the production model that was chosen based on the results from
     evaluate_models(...) and evaluates the model on the test data.
@@ -246,7 +247,6 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     :param X_test: pandas.DataFrame containing the test data
     :param y_test: pandas.Series containing the training labels
     :param subject_ids_train: pandas.Series containing the train subject IDs
-    :param subject_ids_test: pandas.Series containing the test subject IDs
     :param window_size_samples: the number of samples per window. Used for creating folder and file names.
     :param cv_splits: the number of cross-validation splits for the gridsearch. Default: 5
     :return: None
@@ -263,6 +263,21 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     model = tune_production_model(X=X_train, y=y_train, subject_ids=subject_ids_train,
                                   estimator=estimator, param_grid=param_grid, cv_splits=cv_splits)
 
+    # get the project path
+    project_path = os.getcwd()
+
+    # generate a folder path
+    folder_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{window_size_samples}_w_size"))
+
+    # get train and test accuracy
+    _test_production_model_all(model, window_size_samples, X_train, X_test, y_train, y_test, folder_path)
+
+    # test the model on each subject individually
+    _test_production_model_individually(model, window_size_samples, X_test, y_test, folder_path)
+
+
+def _test_production_model_all(model: ClassifierMixin, window_size_samples: int, X_train, X_test, y_train, y_test, folder_path: str) -> None:
+
     # get train and test accuracy
     train_acc = accuracy_score(y_true=y_train, y_pred=model.predict(X_train))
     test_acc = accuracy_score(y_true=y_test, y_pred=model.predict(X_test))
@@ -276,18 +291,14 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     plt.title("Confusion Matrix | Test set")
     plt.show()
 
-    # save model
-    # get the project path
-    project_path = os.getcwd()
-
-    # generate a folder path
-    folder_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{window_size_samples}_w_size"))
-
     # save model and correspondent confusion trix
     model_path = os.path.join(folder_path, f"HAR_model_{window_size_samples}.joblib")
     confusion_matrix_path = os.path.join(folder_path, f"ConfusionMatrix_{window_size_samples}.png")
     joblib.dump(model, model_path)
     plt.savefig(confusion_matrix_path)
+
+
+def _test_production_model_individually(model, window_size_samples, X_test, y_test, subject_ids_test, folder_path) -> None:
 
     # test the production model on each test subject individually
     # cycle over the unique test subject ids
@@ -307,12 +318,14 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
 
         # plot confusion matrix
         ConfusionMatrixDisplay.from_estimator(model, X_test, y_test)
-        plt.title(f"Confusion Matrix | Subject {test_subject_id}")
-        plt.show()
+        plt.title(f"Confusion Matrix | Subject {test_subject_id} | Accuracy {subject_test_acc}")
 
         # save confusion matrix
-        subject_confusion_matrix_path = os.path.join(folder_path, f"ConfusionMatrix_{window_size_samples}_subject_{test_subject_id}.png")
+        subject_confusion_matrix_path = os.path.join(folder_path,
+                                                     f"ConfusionMatrix_{window_size_samples}_subject_{test_subject_id}.png")
         plt.savefig(subject_confusion_matrix_path)
+        plt.show()
+
 
 
 def _save_results(info_df: pd.DataFrame, estimator_name: str, num_classes: int, num_features: int, norm_type: str,
