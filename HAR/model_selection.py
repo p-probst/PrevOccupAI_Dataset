@@ -22,21 +22,20 @@ import os
 import numpy as np
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay, confusion_matrix
+from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.base import ClassifierMixin, BaseEstimator
 
 # internal imports
 from .load import load_features
 from .cross_validation import nested_cross_val, tune_production_model
 from .feature_selection import remove_low_variance, remove_highly_correlated_features, select_k_best_features
+from .post_process import threshold_tuning, expand_classification
 from constants import RANDOM_SEED
 from file_utils import create_dir
 
@@ -241,7 +240,7 @@ def _tune_and_evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Serie
                                         subject_ids_test: pd.Series, window_size_samples: int, cv_splits: int = 5) -> None:
     """
     Performs a final hyperparameter tuning on the production model that was chosen based on the results from
-    evaluate_models(...) and evaluates the model on the test data.
+    evaluate_models(...) and evaluates the model on all test subjects and on each test subject individually.
     :param X_train: pandas.DataFrame containing the training data
     :param y_train: pandas.Series containing the training labels
     :param X_test: pandas.DataFrame containing the test data
@@ -270,6 +269,10 @@ def _tune_and_evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Serie
     # generate a folder path to store the model and confusion matrix
     out_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{window_size_samples}_w_size"))
 
+    # save model
+    model_path = os.path.join(out_path, f"HAR_model_{window_size_samples}.joblib")
+    joblib.dump(model, model_path)
+
     # get train and test accuracy
     _test_all(model, window_size_samples, X_train, X_test, y_train, y_test, out_path)
 
@@ -278,10 +281,9 @@ def _tune_and_evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Serie
 
 
 def _test_all(model: RandomForestClassifier, window_size_samples: int, X_train: pd.DataFrame, X_test: pd.DataFrame,
-              y_train: pd.Series, y_test: pd.Series, out_path: str) -> None:
+              y_train: pd.Series, y_test: pd.Series, out_path: str, do_threshold_tuning: bool = True) -> None:
     """
-    Tests the model (Random Forest) on the data from all subjects in the test set. Generates and saves a confusion matrix
-    as well as the model.
+    Tests the model (Random Forest) on the data from all subjects in the test set. Generates and saves a confusion matrix.
     :param model: RandomForestClassifier
     :param window_size_samples: the number of samples per window. Used for creating  file names.
     :param X_train: pandas.DataFrame containing the training data
@@ -289,6 +291,7 @@ def _test_all(model: RandomForestClassifier, window_size_samples: int, X_train: 
     :param y_train: pandas.Series containing the training labels
     :param y_test: pandas.Series containing the testing labels
     :param out_path: path to the folder in which the model and confusion matrices should be stored
+    :param do_threshold_tuning: apply threshold tuning post processing on the model predictions. Default = 'True'
     :return: None
     """
 
@@ -306,9 +309,26 @@ def _test_all(model: RandomForestClassifier, window_size_samples: int, X_train: 
     disp.ax_.set_title(f"Confusion Matrix | Test set | Accuracy: {test_acc * 100: .2f} %")
     disp.figure_.savefig(os.path.join(out_path, f"ConfusionMatrix_{window_size_samples}_w_size.png"))
 
-    # save model
-    model_path = os.path.join(out_path, f"HAR_model_{window_size_samples}.joblib")
-    joblib.dump(model, model_path)
+    # create dictionary to store the results
+    results_dict = {
+        "vanilla_acc": test_acc
+    }
+
+    # threshold tuning on all test data
+    for threshold in [0.60, 0.65, 0.70, 0.75, 0.8]:
+
+        # get the prediction probabilities
+        pred_probabilities = model.predict_proba(X_test)
+
+        # adjust the prediction according to the threshold
+        y_pred_tt = threshold_tuning(probabilities=pred_probabilities, y_pred=model.predict(X_test), threshold=threshold)
+
+        # calculate new accuracy
+        tt_acc = accuracy_score(y_true=y_test, y_pred= y_pred_tt)
+
+        # save results
+        results_dict[f"tt_{threshold}"] = tt_acc
+
 
 
 def _test_individually(model: RandomForestClassifier, window_size_samples: int, X_test: pd.DataFrame, y_test: pd.Series,
