@@ -25,13 +25,13 @@ import joblib
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay
+from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay, confusion_matrix
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.base import ClassifierMixin
+from sklearn.base import ClassifierMixin, BaseEstimator
 
 # internal imports
 from .load import load_features
@@ -185,7 +185,7 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     print(f"Used features: {X_train.columns.values}")
 
     # evaluate production model
-    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, window_size_samples, cv_splits=2)
+    _tune_and_evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, subject_ids_test, window_size_samples, cv_splits=2)
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
@@ -236,9 +236,9 @@ def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_trai
                       num_features=len(X_train.columns), norm_type=norm_type, window_size_samples=window_size_samples)
 
 
-def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
-                              X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series,
-                               window_size_samples: int, cv_splits: int = 5) -> None:
+def _tune_and_evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
+                                        X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series,
+                                        subject_ids_test: pd.Series, window_size_samples: int, cv_splits: int = 5) -> None:
     """
     Performs a final hyperparameter tuning on the production model that was chosen based on the results from
     evaluate_models(...) and evaluates the model on the test data.
@@ -247,6 +247,7 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     :param X_test: pandas.DataFrame containing the test data
     :param y_test: pandas.Series containing the training labels
     :param subject_ids_train: pandas.Series containing the train subject IDs
+    :param subject_ids_test: pandas.Series containing the test subject IDs
     :param window_size_samples: the number of samples per window. Used for creating folder and file names.
     :param cv_splits: the number of cross-validation splits for the gridsearch. Default: 5
     :return: None
@@ -266,17 +267,30 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     # get the project path
     project_path = os.getcwd()
 
-    # generate a folder path
-    folder_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{window_size_samples}_w_size"))
+    # generate a folder path to store the model and confusion matrix
+    out_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{window_size_samples}_w_size"))
 
     # get train and test accuracy
-    _test_production_model_all(model, window_size_samples, X_train, X_test, y_train, y_test, folder_path)
+    _test_all(model, window_size_samples, X_train, X_test, y_train, y_test, out_path)
 
     # test the model on each subject individually
-    _test_production_model_individually(model, window_size_samples, X_test, y_test, folder_path)
+    _test_individually(model, window_size_samples, X_test, y_test, subject_ids_test, out_path)
 
 
-def _test_production_model_all(model: ClassifierMixin, window_size_samples: int, X_train, X_test, y_train, y_test, folder_path: str) -> None:
+def _test_all(model: RandomForestClassifier, window_size_samples: int, X_train: pd.DataFrame, X_test: pd.DataFrame,
+              y_train: pd.Series, y_test: pd.Series, out_path: str) -> None:
+    """
+    Tests the model (Random Forest) on the data from all subjects in the test set. Generates and saves a confusion matrix
+    as well as the model.
+    :param model: RandomForestClassifier
+    :param window_size_samples: the number of samples per window. Used for creating  file names.
+    :param X_train: pandas.DataFrame containing the training data
+    :param X_test: pandas.DataFrame containing the testing data
+    :param y_train: pandas.Series containing the training labels
+    :param y_test: pandas.Series containing the testing labels
+    :param out_path: path to the folder in which the model and confusion matrices should be stored
+    :return: None
+    """
 
     # get train and test accuracy
     train_acc = accuracy_score(y_true=y_train, y_pred=model.predict(X_train))
@@ -286,19 +300,29 @@ def _test_production_model_all(model: ClassifierMixin, window_size_samples: int,
     print(f"train accuracy: {train_acc * 100: .2f}")
     print(f"test accuracy: {test_acc * 100: .2f}")
 
-    # plot confusion matrix
-    ConfusionMatrixDisplay.from_estimator(model, X_test, y_test)
-    plt.title("Confusion Matrix | Test set")
-    plt.show()
+    # generate and save confusion matrix
+    disp = ConfusionMatrixDisplay.from_estimator(model, X_test, y_test)
+    disp.plot()
+    disp.ax_.set_title(f"Confusion Matrix | Test set | Accuracy: {test_acc * 100: .2f} %")
+    disp.figure_.savefig(os.path.join(out_path, f"ConfusionMatrix_{window_size_samples}_w_size.png"))
 
-    # save model and correspondent confusion trix
-    model_path = os.path.join(folder_path, f"HAR_model_{window_size_samples}.joblib")
-    confusion_matrix_path = os.path.join(folder_path, f"ConfusionMatrix_{window_size_samples}.png")
+    # save model
+    model_path = os.path.join(out_path, f"HAR_model_{window_size_samples}.joblib")
     joblib.dump(model, model_path)
-    plt.savefig(confusion_matrix_path)
 
 
-def _test_production_model_individually(model, window_size_samples, X_test, y_test, subject_ids_test, folder_path) -> None:
+def _test_individually(model: RandomForestClassifier, window_size_samples: int, X_test: pd.DataFrame, y_test: pd.Series,
+                       subject_ids_test: pd.Series, out_path:str) -> None:
+    """
+    Test the model on each test subject individually. Generates and saves the confusion matrices of each test subject.
+    :param model: RandomForestClassifier
+    :param window_size_samples: the number of samples per window. Used for creating  file names.
+    :param X_test: pandas.DataFrame containing the testing data
+    :param y_test: pandas.Series containing the testing labels
+    :param subject_ids_test: pd.Series containing the test subjects IDs
+    :param out_path: path to the folder in which the confusion matrices should be stored
+    :return: None
+    """
 
     # test the production model on each test subject individually
     # cycle over the unique test subject ids
@@ -314,18 +338,13 @@ def _test_production_model_individually(model, window_size_samples, X_test, y_te
         # get test accuracy for the test subject
         subject_test_acc = accuracy_score(y_true=y_test_subject, y_pred=model.predict(X_test_subject))
 
-        print(f"Model accuracy for test subject {test_subject_id}: {subject_test_acc} %")
+        print(f"Model accuracy for test subject {test_subject_id}: {subject_test_acc * 100: .2f} %")
 
-        # plot confusion matrix
-        ConfusionMatrixDisplay.from_estimator(model, X_test, y_test)
-        plt.title(f"Confusion Matrix | Subject {test_subject_id} | Accuracy {subject_test_acc}")
-
-        # save confusion matrix
-        subject_confusion_matrix_path = os.path.join(folder_path,
-                                                     f"ConfusionMatrix_{window_size_samples}_subject_{test_subject_id}.png")
-        plt.savefig(subject_confusion_matrix_path)
-        plt.show()
-
+        # generate and save confusion matrix
+        disp = ConfusionMatrixDisplay.from_estimator(model, X_test_subject, y_test_subject)
+        disp.plot()
+        disp.ax_.set_title(f"Confusion Matrix | Test set | Accuracy: {subject_test_acc * 100: .2f} %")
+        disp.figure_.savefig(os.path.join(out_path, f"ConfusionMatrix_{window_size_samples}_w_size_subject_{test_subject_id}.png"))
 
 
 def _save_results(info_df: pd.DataFrame, estimator_name: str, num_classes: int, num_features: int, norm_type: str,

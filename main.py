@@ -21,8 +21,8 @@ ML_MODEL_SELECTION = False
 ML_TRAIN_PRODUCTION_MODEL = True
 
 # definition of folder_path
-RAW_DATA_FOLDER_PATH = 'E:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
-OUTPUT_FOLDER_PATH = 'E:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
+RAW_DATA_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
+OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here
