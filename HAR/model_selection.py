@@ -281,7 +281,7 @@ def _tune_and_evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Serie
 
 
 def _test_all(model: RandomForestClassifier, window_size_samples: int, X_train: pd.DataFrame, X_test: pd.DataFrame,
-              y_train: pd.Series, y_test: pd.Series, out_path: str, do_threshold_tuning: bool = True) -> None:
+              y_train: pd.Series, y_test: pd.Series, out_path: str, apply_threshold_tuning: bool = False) -> None:
     """
     Tests the model (Random Forest) on the data from all subjects in the test set. Generates and saves a confusion matrix.
     :param model: RandomForestClassifier
@@ -291,7 +291,7 @@ def _test_all(model: RandomForestClassifier, window_size_samples: int, X_train: 
     :param y_train: pandas.Series containing the training labels
     :param y_test: pandas.Series containing the testing labels
     :param out_path: path to the folder in which the model and confusion matrices should be stored
-    :param do_threshold_tuning: apply threshold tuning post-processing on the model predictions. Default = 'True'
+    :param apply_threshold_tuning: apply threshold tuning post-processing on the model predictions. Default = 'True'
     :return: None
     """
 
@@ -309,7 +309,7 @@ def _test_all(model: RandomForestClassifier, window_size_samples: int, X_train: 
     disp.ax_.set_title(f"Confusion Matrix | Test set | Accuracy: {test_acc * 100: .2f} %")
     disp.figure_.savefig(os.path.join(out_path, f"ConfusionMatrix_{window_size_samples}_w_size.png"))
 
-    if do_threshold_tuning:
+    if apply_threshold_tuning:
 
         # create dictionary to store the results
         results_dict = {
@@ -339,7 +339,7 @@ def _test_all(model: RandomForestClassifier, window_size_samples: int, X_train: 
 
 
 def _test_individually(model: RandomForestClassifier, window_size_samples: int, X_test: pd.DataFrame, y_test: pd.Series,
-                       subject_ids_test: pd.Series, out_path: str, do_threshold_tuning: bool = True) -> None:
+                       subject_ids_test: pd.Series, out_path: str, apply_threshold_tuning: bool = False) -> None:
     """
     Test the model on each test subject individually. Generates and saves the confusion matrices of each test subject.
     :param model: RandomForestClassifier
@@ -348,10 +348,10 @@ def _test_individually(model: RandomForestClassifier, window_size_samples: int, 
     :param y_test: pandas.Series containing the testing labels
     :param subject_ids_test: pd.Series containing the test subjects IDs
     :param out_path: path to the folder in which the confusion matrices should be stored
-    :param do_threshold_tuning: apply threshold tuning post-processing on the model predictions. Default = 'True'
+    :param apply_threshold_tuning: apply threshold tuning post-processing on the model predictions. Default = 'True'
     :return: None
     """
-    results_dict = {}
+    results_list = []
 
     # test the production model on each test subject individually
     # cycle over the unique test subject ids
@@ -381,7 +381,7 @@ def _test_individually(model: RandomForestClassifier, window_size_samples: int, 
             "vanilla_acc": subject_test_acc,
         }
 
-        if do_threshold_tuning:
+        if apply_threshold_tuning:
 
             # threshold tuning on each test subject individually# threshold tuning on all test data
             for threshold in [0.60, 0.65, 0.70, 0.75, 0.8]:
@@ -399,8 +399,10 @@ def _test_individually(model: RandomForestClassifier, window_size_samples: int, 
                 # save results
                 results_dict[f"tt_{threshold}"] = tt_acc
 
+        results_list.append(results_dict)
+
     # save accuracy results to a csv file
-    results_df = pd.DataFrame([results_dict])
+    results_df = pd.DataFrame(results_list)
     results_path = os.path.join(out_path, f"individual_threshold_tuning_acc_results_{window_size_samples}_w_size.csv")
     results_df.to_csv(results_path, index=False)
 
