@@ -291,7 +291,7 @@ def _test_all(model: RandomForestClassifier, window_size_samples: int, X_train: 
     :param y_train: pandas.Series containing the training labels
     :param y_test: pandas.Series containing the testing labels
     :param out_path: path to the folder in which the model and confusion matrices should be stored
-    :param do_threshold_tuning: apply threshold tuning post processing on the model predictions. Default = 'True'
+    :param do_threshold_tuning: apply threshold tuning post-processing on the model predictions. Default = 'True'
     :return: None
     """
 
@@ -309,30 +309,37 @@ def _test_all(model: RandomForestClassifier, window_size_samples: int, X_train: 
     disp.ax_.set_title(f"Confusion Matrix | Test set | Accuracy: {test_acc * 100: .2f} %")
     disp.figure_.savefig(os.path.join(out_path, f"ConfusionMatrix_{window_size_samples}_w_size.png"))
 
-    # create dictionary to store the results
-    results_dict = {
-        "vanilla_acc": test_acc
-    }
+    if do_threshold_tuning:
 
-    # threshold tuning on all test data
-    for threshold in [0.60, 0.65, 0.70, 0.75, 0.8]:
+        # create dictionary to store the results
+        results_dict = {
+            "vanilla_acc": test_acc
+        }
 
-        # get the prediction probabilities
-        pred_probabilities = model.predict_proba(X_test)
+        # threshold tuning on all test data
+        for threshold in [0.60, 0.65, 0.70, 0.75, 0.8]:
 
-        # adjust the prediction according to the threshold
-        y_pred_tt = threshold_tuning(probabilities=pred_probabilities, y_pred=model.predict(X_test), threshold=threshold)
+            # get the prediction probabilities
+            pred_probabilities = model.predict_proba(X_test)
 
-        # calculate new accuracy
-        tt_acc = accuracy_score(y_true=y_test, y_pred= y_pred_tt)
+            # adjust the prediction according to the threshold
+            y_pred_tt = threshold_tuning(probabilities=pred_probabilities, y_pred=model.predict(X_test), threshold=threshold)
 
-        # save results
-        results_dict[f"tt_{threshold}"] = tt_acc
+            # calculate new accuracy
+            tt_acc = accuracy_score(y_true=y_test, y_pred= y_pred_tt)
+
+            # save results
+            results_dict[f"tt_{threshold}"] = tt_acc
+
+        # save accuracy results to a csv file
+        results_df = pd.DataFrame([results_dict])
+        results_path = os.path.join(out_path, f"all_threshold_tuning_acc_results_{window_size_samples}_w_size.csv")
+        results_df.to_csv(results_path,index=False)
 
 
 
 def _test_individually(model: RandomForestClassifier, window_size_samples: int, X_test: pd.DataFrame, y_test: pd.Series,
-                       subject_ids_test: pd.Series, out_path:str) -> None:
+                       subject_ids_test: pd.Series, out_path: str, do_threshold_tuning: bool = True) -> None:
     """
     Test the model on each test subject individually. Generates and saves the confusion matrices of each test subject.
     :param model: RandomForestClassifier
@@ -341,8 +348,10 @@ def _test_individually(model: RandomForestClassifier, window_size_samples: int, 
     :param y_test: pandas.Series containing the testing labels
     :param subject_ids_test: pd.Series containing the test subjects IDs
     :param out_path: path to the folder in which the confusion matrices should be stored
+    :param do_threshold_tuning: apply threshold tuning post-processing on the model predictions. Default = 'True'
     :return: None
     """
+    results_dict = {}
 
     # test the production model on each test subject individually
     # cycle over the unique test subject ids
@@ -365,6 +374,36 @@ def _test_individually(model: RandomForestClassifier, window_size_samples: int, 
         disp.plot()
         disp.ax_.set_title(f"Confusion Matrix | Test set | Accuracy: {subject_test_acc * 100: .2f} %")
         disp.figure_.savefig(os.path.join(out_path, f"ConfusionMatrix_{window_size_samples}_w_size_subject_{test_subject_id}.png"))
+
+        # create dictionary to store the results
+        results_dict = {
+            "subject_ID": test_subject_id,
+            "vanilla_acc": subject_test_acc,
+        }
+
+        if do_threshold_tuning:
+
+            # threshold tuning on each test subject individually# threshold tuning on all test data
+            for threshold in [0.60, 0.65, 0.70, 0.75, 0.8]:
+
+                # get the prediction probabilities
+                pred_probabilities = model.predict_proba(X_test_subject)
+
+                # adjust the prediction according to the threshold
+                y_pred_tt = threshold_tuning(probabilities=pred_probabilities, y_pred=model.predict(X_test_subject),
+                                             threshold=threshold)
+
+                # calculate new accuracy
+                tt_acc = accuracy_score(y_true=y_test_subject, y_pred=y_pred_tt)
+
+                # save results
+                results_dict[f"tt_{threshold}"] = tt_acc
+
+    # save accuracy results to a csv file
+    results_df = pd.DataFrame([results_dict])
+    results_path = os.path.join(out_path, f"individual_threshold_tuning_acc_results_{window_size_samples}_w_size.csv")
+    results_df.to_csv(results_path, index=False)
+
 
 
 def _save_results(info_df: pd.DataFrame, estimator_name: str, num_classes: int, num_features: int, norm_type: str,
