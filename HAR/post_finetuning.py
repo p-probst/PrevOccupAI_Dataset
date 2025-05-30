@@ -24,13 +24,16 @@ from constants import TXT
 # ------------------------------------------------------------------------------------------------------------------- #
 
 def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_durations,
-                            fs: int, w_size: int, threshold, load_sensors: Optional[List[str]] = None, nr_samples_mv: int = 20):
+                            fs: int, w_size: int, threshold, load_sensors: Optional[List[str]] = None, nr_samples_mv: int = 20) -> None:
 
     # list all folders within the raw_data_path
     subject_folders = os.listdir(raw_data_path)
 
     # get the folders that contain the subject data. Subject data folders start with 'S' (e.g., S001)
     subject_folders = [folder for folder in subject_folders if folder.startswith('S')]
+
+    # dictionaty for holding the results for all subjects
+    subject_predictions_dict = {}
 
     for subject in subject_folders:
 
@@ -71,11 +74,11 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_d
         subject_data, labels = _pre_process_signals(subject_data, sensor_names, w_size=w_size, fs=fs)
 
         # extract features
-        cfg = tsfel.load_json(".\\HAR\\production_models\\500_w_size\\cfg_file_production_model.json")
+        cfg = tsfel.load_json(f".\\HAR\\production_models\\{w_size}_w_size\\cfg_file_production_model.json")
         features = tsfel.time_series_features_extractor(cfg, subject_data, window_size=w_size, fs=fs, header_names=sensor_names)
 
         # load the model
-        har_model, feature_names = _load_production_model(".\\HAR\\production_models\\500_w_size\\HAR_model_500.joblib")
+        har_model, feature_names = _load_production_model(f".\\HAR\\production_models\\{w_size}_w_size\\HAR_model_500.joblib")
 
         # get the features that are needed fot the classifier
         features = features[feature_names]
@@ -83,9 +86,14 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_d
         # classify and post-process
         results_dict = _apply_post_processing(features, labels, har_model, w_size, fs, nr_samples_mv, threshold, min_durations)
 
-        pass
+        # add to dictionaty
+        subject_predictions_dict[subject] = results_dict
 
+    # put dictionary into a pandas dataframe
+    results_df = pd.DataFrame.from_dict(subject_predictions_dict, orient='index')
 
+    # save dataframe as csv file
+    results_df.to_csv(f".\\HAR\\production_models\\{w_size}_w_size\\post_processing_results.csv", index=True)
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -135,7 +143,8 @@ def _pre_process_signals(subject_data: pd.DataFrame, sensor_names, w_size: int, 
 
 def _trim_data(data, w_size, fs):
     """
-        Function to get the amount that needs to be trimmed from the data to accomodate full windowing of the data (i.e., not excluding samples at the end).
+        Function to get the amount that needs to be trimmed from the data to accomodate full windowing of the data
+        (i.e., not excluding samples at the end).
         :param data: numpy.array containing the data
         :param w_size: Window size in seconds
         :param fs: Sampling rate
@@ -190,7 +199,7 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
 
         # calculate accuracy
         accuracy = accuracy_score(labels, y_pred_expanded)
-        accuracies.append(accuracy)
+        accuracies.append(round(accuracy*100, 2))
 
     # plot predictions
 
@@ -219,4 +228,5 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions, accuracies, 
             axes[i + 1].set_title(f"{name}: {acc * 100:.2f}%", fontsize=18)
 
         plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))  # Leave space for subtitle
+        plt.savefig(f".\\HAR\\production_models\\{w_size}_w_size\\post_processing_results_fig.png")
         plt.show()
