@@ -21,7 +21,7 @@ _balance_subject_data(...): Balances the subject's feature data by selecting the
 import os
 import numpy as np
 import pandas as pd
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 from tqdm import tqdm
 
 # internal imports

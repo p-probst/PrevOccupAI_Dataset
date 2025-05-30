@@ -25,7 +25,7 @@ from collections import Counter
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def majority_vote_mid(predictions: List[int], num_samples: int) -> List[int]:
+def majority_vote_mid(predictions: np.ndarray, num_samples: int) -> np.ndarray:
     """
     Implementation of the majority vote (MV) according to Engelhardt and Hudgins as presented in:
     'A Robust, Real-Time Control Scheme for Multifunction Myoelectric Control'

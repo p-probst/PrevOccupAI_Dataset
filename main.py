@@ -3,6 +3,9 @@
 # ------------------------------------------------------------------------------------------------------------------- #
 import os
 
+from pywt import threshold
+
+from HAR.post_finetuning import perform_post_processing
 # internal imports
 from constants import VALID_SENSORS, SEGMENTED_DATA_FOLDER, EXTRACTED_FEATURES_FOLDER, RANDOM_SEED
 from raw_data_processor import generate_segmented_dataset
@@ -18,7 +21,8 @@ GENERATE_SEGMENTED_DATASET = False
 EXTRACT_FEATURES = False
 ML_HAR = True
 ML_MODEL_SELECTION = False
-ML_TRAIN_PRODUCTION_MODEL = True
+ML_TRAIN_PRODUCTION_MODEL = False
+ML_POST_PROCESSING = True
 
 # definition of folder_path
 RAW_DATA_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
@@ -72,8 +76,14 @@ if __name__ == '__main__':
             print("\ntraining and evaluating production model")
             train_production_model(feature_data_path, num_features_retain=30, balancing_type=balancing_type, norm_type='none', window_size_samples=500)
 
+        if ML_POST_PROCESSING:
 
+            raw_data_path = "C:\\Users\\srale\\Desktop\\work_sim"
+            label_map = {'sitting': 0, 'standing': 1, 'walking': 2}
+            min_durations = {0:30, 1:30, 2:10}
 
+            print("\nPerforming post processing")
+            perform_post_processing(raw_data_path, label_map, min_durations, fs=100, w_size=500, threshold=0.7)
 
 
 
