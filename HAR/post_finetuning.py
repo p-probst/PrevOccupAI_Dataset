@@ -1,3 +1,21 @@
+"""
+Function for applying post-processing schemes to a prediction of a given classifier
+
+Available Functions
+-------------------
+[Public]
+perform_post_processing(...): Executes a post-processing pipeline for HAR using a pre-trained model
+
+-------------------
+[Private]
+_load_production_model(...): Loads the pre-trained model
+_pre_process_signals(...): Preprocesses the sensor data and label vector
+_trim_data(...): Trims the sensor data to accommodate the full windowing
+_apply_post_processing(...): Applies the post-processing schemes, implemented in post_process.py
+_plot_all_predictions(...): Generates and saves a plot with the post-processing results for each subject
+------------------
+"""
+
 # ------------------------------------------------------------------------------------------------------------------- #
 # imports
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -23,8 +41,28 @@ from constants import TXT
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
 
-def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_durations,
-                            fs: int, w_size: float, threshold, load_sensors: Optional[List[str]] = None, nr_samples_mv: int = 20) -> None:
+def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_durations: Dict[int, int],
+                            fs: int, w_size: float, threshold: float, load_sensors: Optional[List[str]] = None,
+                            nr_samples_mv: int = 20) -> None:
+    """
+    Executes a post-processing pipeline for Human Activity Recognition (HAR) using a pre-trained model.
+
+    This function iterates over subject folders within the given directory, loads and preprocesses
+    sensor data and corresponding labels, extracts features, classifies the data using a pre-trained HAR model,
+    and applies post-processing logic to refine predictions. The results of the post-processing over all subjects
+    are saved as a CSV file. This functions also generates and saves a plot for each subject with the results.
+
+    :param raw_data_path: path to the folder containing the subject folders
+    :param label_map: A dictionary mapping activity strings to numeric labels.
+                        e.g., {"sitting": 1, "standing": 2, "walking": 3}.
+    :param min_durations: Dictionary mapping each class label to its minimum segment duration in seconds.
+    :param fs: the sampling frequency
+    :param w_size: the window size in samples
+    :param threshold: The probability margin threshold for adjusting predictions. Default is 0.1.
+    :param load_sensors: list of sensors (as strings) indicating which sensors should be loaded. Default: None (all sensors are loaded)
+    :param nr_samples_mv: the number of samples until the current position of the classifier
+    :return: None
+    """
 
     # list all folders within the raw_data_path
     subject_folders = os.listdir(raw_data_path)
@@ -101,7 +139,11 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_d
 # ------------------------------------------------------------------------------------------------------------------- #
 
 def _load_production_model(model_path: str) -> Tuple[RandomForestClassifier, List[str]]:
-
+    """
+    Loads the production model
+    :param model_path: path o the model
+    :return: a tuple containing the model and the list of features used
+    """
     # load the classifier
     har_model = joblib.load(model_path)
 
@@ -120,7 +162,18 @@ def _load_production_model(model_path: str) -> Tuple[RandomForestClassifier, Lis
     return har_model, feature_names
 
 
-def _pre_process_signals(subject_data: pd.DataFrame, sensor_names, w_size: float, fs: int):
+def _pre_process_signals(subject_data: pd.DataFrame, sensor_names: List[str], w_size: float,
+                         fs: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Pre-processes the sensors contained in data_array according to their sensor type. Removes samples from the
+    impulse response of the filters and trims the data and label vector to accommodate full windowing of the data.
+
+    :param subject_data: pandas.DataFrame containing the sensor data
+    :param sensor_names: list of strings correspondent to the sensor names
+    :param w_size: window size in seconds
+    :param fs: the sampling frequency
+    :return: the processed sensor data and label vector
+    """
 
     # convert data to numpy array
     sensor_data = subject_data.values[:,1:-1]
@@ -135,21 +188,21 @@ def _pre_process_signals(subject_data: pd.DataFrame, sensor_names, w_size: float
     sensor_data = sensor_data[250:,:]
     labels = labels[250:]
 
-    # trim the data to accomodate full windowing
+    # trim the data to accommodate full windowing
     sensor_data, to_trim = _trim_data(sensor_data, w_size=w_size, fs=fs)
     labels = labels[:-to_trim]
 
     return sensor_data, labels
 
-def _trim_data(data, w_size, fs):
+def _trim_data(data: np.ndarray, w_size: float, fs: int) -> Tuple[np.ndarray, int]:
     """
-        Function to get the amount that needs to be trimmed from the data to accomodate full windowing of the data
-        (i.e., not excluding samples at the end).
-        :param data: numpy.array containing the data
-        :param w_size: Window size in seconds
-        :param fs: Sampling rate
-        :return: DataFrame containing the trimmed muscleBAN data.
-        """
+    Function to get the amount that needs to be trimmed from the data to accommodate full windowing of the data
+    (i.e., not excluding samples at the end).
+    :param data: numpy.array containing the data
+    :param w_size: Window size in seconds
+    :param fs: Sampling rate
+    :return: the trimmed data and the amount of samples that needed to be trimmed.
+    """
 
     # calculate the amount that has to be trimmed of the signal
     to_trim = int(data.shape[0] % (w_size * fs))
@@ -157,7 +210,25 @@ def _trim_data(data, w_size, fs):
     return data[:-to_trim, :], to_trim
 
 
-def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float, fs: int, nr_samples_mv, threshold, min_durations):
+def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
+                           fs: int, nr_samples_mv: int, threshold: float, min_durations: Dict[int,int]) -> Dict[str, float]:
+    """
+    Applies multiple post-processing schemes to the predictions of a classifier (Random Forest): majority voting,
+    threshold tuning, heuristics, threshold tuning + majority voting, and threshold tuning + heuristics. Check the
+    documentation of these post-processing methods in post_process.py. This function generates a plot with the
+    vanilla accuracy and the post-processing accuracies for each subject, as well as a .csv file containing the
+    results for all subjects.
+
+    :param features: numpy.array of shape (n_samples, n_features) containing the features
+    :param labels: numpy.array containing the true class labels
+    :param har_model: object from RandomForestClassifier
+    :param w_size: window size in seconds
+    :param fs: the sampling frequency
+    :param nr_samples_mv: number of samples until the current position of the classifier
+    :param threshold: The probability margin threshold for adjusting predictions. Default is 0.1.
+    :param min_durations: Dictionary mapping each class label to its minimum segment duration in seconds.
+    :return: Dict[str, float] where the keys is the post-processing scheme (name) and the value is the accuracy.
+    """
 
     # list for holding the lists with the predictions
     predictions = []
@@ -208,27 +279,37 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
     # save results to a dictionary
     results_dict = dict(zip(post_processing_schemes, accuracies))
 
-    # plot predictions
+    # plot predictions and save
     _plot_all_predictions(labels, expanded_predictions, accuracies, post_processing_schemes, w_size)
 
     return results_dict
 
 
-def _plot_all_predictions(labels: np.ndarray, expanded_predictions, accuracies, post_processing_schemes, w_size):
+def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[np.ndarray], accuracies: List[float],
+                          post_processing_schemes: List[str], w_size: float) -> None:
+    """
+    Generates and saves a figure with 6 plots. The first plot corresponds to true labels over time, and the other five plots
+    correspond to the vanilla models and post-processing results over time.
+    :param labels: numpy.array containing the true labels
+    :param expanded_predictions: List os numpy.arrays containing the predictions expanded to the size of the true label vector
+    :param accuracies: List containing the accuracies of the vanilla model and the 4 post-processing schemes.
+    :param post_processing_schemes: list of strings pertaining to the name of the post-processing type
+    :param w_size: window size in seconds
+    :return: None
+    """
+    n_preds = len(expanded_predictions)
+    fig, axes = plt.subplots(nrows=n_preds + 1, ncols=1, sharex=True, sharey=True, figsize=(30, 3 * (n_preds + 1)))
+    fig.suptitle(f"True labels vs post-processed predictions (Window size: {int(w_size*100)} samples)", fontsize=24)
 
-        n_preds = len(expanded_predictions)
-        fig, axes = plt.subplots(nrows=n_preds + 1, ncols=1, sharex=True, sharey=True, figsize=(30, 3 * (n_preds + 1)))
-        fig.suptitle(f"True labels vs post-processed predictions (Window size: {int(w_size*100)} samples)", fontsize=24)
+    # Plot true labels
+    axes[0].plot(labels, color='teal')
+    axes[0].set_title("True Labels", fontsize=18)
 
-        # Plot true labels
-        axes[0].plot(labels, color='teal')
-        axes[0].set_title("True Labels", fontsize=18)
+    # Plot each prediction
+    for i, (pred, acc, name) in enumerate(zip(expanded_predictions, accuracies, post_processing_schemes)):
+        axes[i + 1].plot(pred, color='darkorange')
+        axes[i + 1].set_title(f"{name}: {acc * 100:.2f}%", fontsize=18)
 
-        # Plot each prediction
-        for i, (pred, acc, name) in enumerate(zip(expanded_predictions, accuracies, post_processing_schemes)):
-            axes[i + 1].plot(pred, color='darkorange')
-            axes[i + 1].set_title(f"{name}: {acc * 100:.2f}%", fontsize=18)
-
-        plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))  # Leave space for subtitle
-        plt.savefig(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\post_processing_results_fig.png")
-        plt.show()
+    plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))  # Leave space for subtitle
+    plt.savefig(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\post_processing_results_fig.png")
+    plt.show()

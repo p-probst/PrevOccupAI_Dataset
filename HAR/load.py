@@ -5,6 +5,7 @@ Available Functions
 -------------------
 [Public]
 load_features(...): loads the extracted features from all the subjects.
+load_labels_from_log(...): loads the labels from a txt file and generates a label vector
 ------------------
 [Private]
 _get_feature_names_and_instances(...): Extracts feature names and determines the number of instances per sub-class based on the selected balancing strategy.

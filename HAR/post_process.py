@@ -36,11 +36,11 @@ def majority_vote_mid(predictions: np.ndarray, num_samples: int) -> np.ndarray:
 
                                 tau*m <= T_d; with tau = processing delay (classification time)
 
-    However these constraints do not apply to this function since the calculations are done offline (at the moment)
+    However, these constraints do not apply to this function since the calculations are done offline (at the moment)
 
-    :param predictions: list containing the predictions of the classifier
+    :param predictions: numpy.array containing the predictions of the classifier
     :param num_samples: the number of samples until the current position of the classifier
-    :return: list with the majority vote corrected predictions
+    :return: numpy.array with the majority vote corrected predictions
     """
 
     # calculate the size of the MV window
