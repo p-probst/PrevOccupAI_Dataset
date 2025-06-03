@@ -26,7 +26,7 @@ from tqdm import tqdm
 
 # internal imports
 from constants import CLASS_INSTANCES_JSON, FEATURE_COLS_KEY, SUB_ACTIVITIES_WALK_LABELS, SUB_ACTIVITIES_STAND_LABELS, \
-    NPY, SUB_LABEL_KEY, MAIN_LABEL_KEY, RANDOM_SEED
+    NPY, SUB_LABEL_KEY, MAIN_LABEL_KEY, RANDOM_SEED, MAG
 from file_utils import remove_file_duplicates, load_json_file
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -123,6 +123,7 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
 
     # combine all data to one array and transform it to a pandas.DataFrame
     loaded_features = pd.DataFrame(np.vstack(loaded_features), columns=feature_names)
+
     print(f"Total number of instances per subject: {instances_per_subject}")
     print(f"Total number of instances: {loaded_features.shape[0]} over {len(subject_files)} subjects")
 
@@ -130,7 +131,12 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
     main_class_labels = loaded_features[MAIN_LABEL_KEY].astype(int)
     sub_class_labels = loaded_features[SUB_LABEL_KEY].astype(int)
 
+    # drop main and sub-label key as they are not needed anymore
     loaded_features = loaded_features.drop(columns=[MAIN_LABEL_KEY, SUB_LABEL_KEY])
+
+    # drop MAG features from feature names
+    loaded_features = loaded_features.drop(list(loaded_features.filter(regex=MAG)), axis=1)
+
 
     return loaded_features, main_class_labels, sub_class_labels, pd.Series(loaded_subject_ids)
 
@@ -286,7 +292,10 @@ def _load_file(file_path: str, file_type: str) -> np.array:
     else:  # file typle .csv
 
         # load the csv as numpy array to facilitate the code below (everything is handled as numpy.array)
-        subject_features = pd.read_csv(file_path, sep=';').values
+        subject_features = pd.read_csv(file_path, sep=';')
+
+        # dataframe to numpy array
+        subject_features = subject_features.to_numpy()
 
     return subject_features
 

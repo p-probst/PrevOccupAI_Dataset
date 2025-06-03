@@ -70,7 +70,7 @@ if __name__ == '__main__':
         if ML_TRAIN_PRODUCTION_MODEL:
 
             print("\ntraining and evaluating production model")
-            train_production_model(feature_data_path, num_features_retain=30, balancing_type=balancing_type, norm_type='none', window_size_samples=500)
+            train_production_model(feature_data_path, num_features_retain=25, balancing_type=balancing_type, norm_type='none', window_size_samples=500)
 
 
 

@@ -267,10 +267,10 @@ def _tune_and_evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Serie
     project_path = os.getcwd()
 
     # generate a folder path to store the model and confusion matrix
-    out_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{window_size_samples}_w_size"))
+    out_path = create_dir(project_path, os.path.join("HAR", "production_models", f"no_mag_{window_size_samples}_w_size"))
 
     # save model
-    model_path = os.path.join(out_path, f"HAR_model_{window_size_samples}.joblib")
+    model_path = os.path.join(out_path, f"no_mag_HAR_model_{window_size_samples}.joblib")
     joblib.dump(model, model_path)
 
     # get train and test accuracy
@@ -427,6 +427,6 @@ def _save_results(info_df: pd.DataFrame, estimator_name: str, num_classes: int, 
     folder_path = create_dir(project_path, os.path.join("Results", "ML", f"{window_size_samples}_w_size", f"num_classes_{num_classes}"))
 
     # create full file path
-    file_path = os.path.join(folder_path,f'{estimator_name}_f{num_features}_wNorm-{norm_type}.csv')
+    file_path = os.path.join(folder_path,f'No_mag_{estimator_name}_f{num_features}_wNorm-{norm_type}.csv')
 
     info_df.to_csv(file_path, sep=';', index=False)
