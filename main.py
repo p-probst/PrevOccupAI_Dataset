@@ -78,12 +78,12 @@ if __name__ == '__main__':
 
         if ML_POST_PROCESSING:
 
-            raw_data_path = "C:\\Users\\srale\\Desktop\\work_sim"
+            raw_data_path = "G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\work_simulation\\raw_data"
             label_map = {'sitting': 0, 'standing': 1, 'walking': 2}
             min_durations = {0:30, 1:30, 2:10}
 
             print("\nPerforming post processing")
-            perform_post_processing(raw_data_path, label_map, min_durations, fs=100, w_size=500, threshold=0.7)
+            perform_post_processing(raw_data_path, label_map, min_durations, fs=100, w_size=5.0, threshold=0.7)
 
 
 

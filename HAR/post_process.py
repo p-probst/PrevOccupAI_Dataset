@@ -132,7 +132,7 @@ def heuristics_correction(predictions: np.ndarray,
     return corrected
 
 
-def expand_classification(clf_result: List[int], w_size: int, fs: int) -> List[int]:
+def expand_classification(clf_result: List[int], w_size: float, fs: int) -> List[int]:
     """
     Converts the time column from the android timestamp which is in nanoseconds to seconds.
     Parameters.

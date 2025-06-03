@@ -24,7 +24,7 @@ from constants import TXT
 # ------------------------------------------------------------------------------------------------------------------- #
 
 def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_durations,
-                            fs: int, w_size: int, threshold, load_sensors: Optional[List[str]] = None, nr_samples_mv: int = 20) -> None:
+                            fs: int, w_size: float, threshold, load_sensors: Optional[List[str]] = None, nr_samples_mv: int = 20) -> None:
 
     # list all folders within the raw_data_path
     subject_folders = os.listdir(raw_data_path)
@@ -71,20 +71,20 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_d
         sensor_names = subject_data.columns.values[1:-1]
 
         # pre process signals
-        subject_data, labels = _pre_process_signals(subject_data, sensor_names, w_size=w_size, fs=fs)
+        sensor_data, true_labels = _pre_process_signals(subject_data, sensor_names, w_size=w_size, fs=fs)
 
         # extract features
-        cfg = tsfel.load_json(f".\\HAR\\production_models\\{w_size}_w_size\\cfg_file_production_model.json")
-        features = tsfel.time_series_features_extractor(cfg, subject_data, window_size=w_size, fs=fs, header_names=sensor_names)
+        cfg = tsfel.load_json(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\cfg_file_production_model.json")
+        features = tsfel.time_series_features_extractor(cfg, sensor_data, window_size=int(w_size*100), fs=fs, header_names=sensor_names)
 
         # load the model
-        har_model, feature_names = _load_production_model(f".\\HAR\\production_models\\{w_size}_w_size\\HAR_model_500.joblib")
+        har_model, feature_names = _load_production_model(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\HAR_model_500.joblib")
 
         # get the features that are needed fot the classifier
         features = features[feature_names]
 
         # classify and post-process
-        results_dict = _apply_post_processing(features, labels, har_model, w_size, fs, nr_samples_mv, threshold, min_durations)
+        results_dict = _apply_post_processing(features, true_labels, har_model, w_size, fs, nr_samples_mv, threshold, min_durations)
 
         # add to dictionaty
         subject_predictions_dict[subject] = results_dict
@@ -93,7 +93,7 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_d
     results_df = pd.DataFrame.from_dict(subject_predictions_dict, orient='index')
 
     # save dataframe as csv file
-    results_df.to_csv(f".\\HAR\\production_models\\{w_size}_w_size\\post_processing_results.csv", index=True)
+    results_df.to_csv(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\post_processing_results.csv", index=True)
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -120,13 +120,13 @@ def _load_production_model(model_path: str) -> Tuple[RandomForestClassifier, Lis
     return har_model, feature_names
 
 
-def _pre_process_signals(subject_data: pd.DataFrame, sensor_names, w_size: int, fs: int):
+def _pre_process_signals(subject_data: pd.DataFrame, sensor_names, w_size: float, fs: int):
 
     # convert data to numpy array
     sensor_data = subject_data.values[:,1:-1]
 
     # get the label vector
-    labels = subject_data.values[1:-1]
+    labels = subject_data.values[:, -1]
 
     # pre-process the data
     sensor_data = pre_process_sensors(sensor_data, sensor_names)
@@ -136,8 +136,8 @@ def _pre_process_signals(subject_data: pd.DataFrame, sensor_names, w_size: int, 
     labels = labels[250:]
 
     # trim the data to accomodate full windowing
-    sensor_data, to_trim = _trim_data(sensor_data, w_size, fs)
-    labels= labels[:-to_trim]
+    sensor_data, to_trim = _trim_data(sensor_data, w_size=w_size, fs=fs)
+    labels = labels[:-to_trim]
 
     return sensor_data, labels
 
@@ -157,7 +157,7 @@ def _trim_data(data, w_size, fs):
     return data[:-to_trim, :], to_trim
 
 
-def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: int, fs: int, nr_samples_mv, threshold, min_durations):
+def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float, fs: int, nr_samples_mv, threshold, min_durations):
 
     # list for holding the lists with the predictions
     predictions = []
@@ -194,20 +194,22 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
     for prediction in predictions:
 
         # expand the predictions to the size of the original signal
-        y_pred_expanded = expand_classification(prediction, w_size, fs)
+        y_pred_expanded = expand_classification(prediction, w_size = w_size, fs=fs)
         expanded_predictions.append(y_pred_expanded)
 
         # calculate accuracy
         accuracy = accuracy_score(labels, y_pred_expanded)
         accuracies.append(round(accuracy*100, 2))
 
-    # plot predictions
 
     # get a list containing the type of post-processing schemes
     post_processing_schemes = ["vanilla model", "majority voting", "threshold tuning", "heuristics", "tt + mv", "tt + heur"]
 
     # save results to a dictionary
     results_dict = dict(zip(post_processing_schemes, accuracies))
+
+    # plot predictions
+    _plot_all_predictions(labels, expanded_predictions, accuracies, post_processing_schemes, w_size)
 
     return results_dict
 
@@ -216,7 +218,7 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions, accuracies, 
 
         n_preds = len(expanded_predictions)
         fig, axes = plt.subplots(nrows=n_preds + 1, ncols=1, sharex=True, sharey=True, figsize=(30, 3 * (n_preds + 1)))
-        fig.suptitle(f"True labels vs post-processed predictions (Window size: {w_size})", fontsize=24)
+        fig.suptitle(f"True labels vs post-processed predictions (Window size: {int(w_size*100)} samples)", fontsize=24)
 
         # Plot true labels
         axes[0].plot(labels, color='teal')
@@ -228,5 +230,5 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions, accuracies, 
             axes[i + 1].set_title(f"{name}: {acc * 100:.2f}%", fontsize=18)
 
         plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))  # Leave space for subtitle
-        plt.savefig(f".\\HAR\\production_models\\{w_size}_w_size\\post_processing_results_fig.png")
+        plt.savefig(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\post_processing_results_fig.png")
         plt.show()
