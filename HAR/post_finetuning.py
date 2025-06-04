@@ -42,7 +42,7 @@ from constants import TXT
 # ------------------------------------------------------------------------------------------------------------------- #
 
 def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_durations: Dict[int, int],
-                            fs: int, w_size: float, threshold: float, load_sensors: Optional[List[str]] = None,
+                            fs: int, w_size: float, threshold: Optional[float] = None, load_sensors: Optional[List[str]] = None,
                             nr_samples_mv: int = 20) -> None:
     """
     Executes a post-processing pipeline for Human Activity Recognition (HAR) using a pre-trained model.
@@ -122,7 +122,8 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_d
         features = features[feature_names]
 
         # classify and post-process
-        results_dict = _apply_post_processing(features, true_labels, har_model, w_size, fs, nr_samples_mv, threshold, min_durations, subject)
+        results_dict = _apply_post_processing(features, true_labels, har_model, w_size, fs,
+                                                              nr_samples_mv, threshold, min_durations, subject)
 
         # add to dictionaty
         subject_predictions_dict[subject] = results_dict
@@ -211,7 +212,7 @@ def _trim_data(data: np.ndarray, w_size: float, fs: int) -> Tuple[np.ndarray, in
 
 
 def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
-                           fs: int, nr_samples_mv: int, threshold: float, min_durations: Dict[int,int],
+                           fs: int, nr_samples_mv: int, threshold: Optional[float], min_durations: Dict[int,int],
                            subject_id: str) -> Dict[str, float]:
     """
     Applies multiple post-processing schemes to the predictions of a classifier (Random Forest): majority voting,
@@ -248,6 +249,17 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
 
     # apply threshold tuning
     y_pred_proba = har_model.predict_proba(features)
+
+    # check if a threshold was given as input
+    if threshold is None:
+
+        # find the best threshold
+        best_threshold = _find_best_threshold(y_pred_proba, y_pred, labels, 1, 0, w_size, fs)
+
+        # use the best threshold for all post-processing methods
+        threshold = best_threshold
+
+
     y_pred_tt = threshold_tuning(y_pred_proba, y_pred,0,1, threshold)
 
     # apply heuristics
@@ -275,10 +287,14 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
 
 
     # get a list containing the type of post-processing schemes
-    post_processing_schemes = ["vanilla model", "majority voting", "threshold tuning", "heuristics", "tt + mv", "tt + heur"]
+    post_processing_schemes = ["vanilla model acc", "majority voting acc", "threshold tuning acc", "heuristics acc",
+                               "tt + mv acc", "tt + heur acc"]
 
     # save results to a dictionary
     results_dict = dict(zip(post_processing_schemes, accuracies))
+
+    # add threshold to the dictionary
+    results_dict['threshold_value'] = threshold
 
     # plot predictions and save
     _plot_all_predictions(labels, expanded_predictions, accuracies, post_processing_schemes, w_size, subject_id)
@@ -314,3 +330,31 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[in
     plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))  # Leave space for subtitle
     plt.savefig(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\post_processing_results_fig_{subject_id}.png")
     plt.show()
+
+
+def _find_best_threshold(probabilities, y_pred, true_labels, sit_label, stand_label, w_size, fs):
+
+    # variable to store the highest accuracy
+    best_acc = 0
+
+    # variable for holding the best threshold
+    best_threshold = 0
+
+    # iterate through different threshold values
+    for threshold in [0.60, 0.65, 0.70, 0.75, 0.80, 0.85]:
+
+        # adjust the prediction according to the threshold
+        y_pred_tt = threshold_tuning(probabilities, y_pred, sit_label, stand_label, threshold)
+
+        # expand classification to the size of the true label vector
+        y_pred_tt_expanded = expand_classification(y_pred_tt, w_size, fs)
+
+        # calculate accuracy
+        tt_acc = accuracy_score(y_true=true_labels, y_pred=y_pred_tt_expanded)
+
+        # check if it's the highest accuracy and update variable
+        if tt_acc > best_acc:
+            best_acc = tt_acc
+            best_threshold = threshold
+
+    return best_threshold
