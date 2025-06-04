@@ -122,7 +122,7 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_d
         features = features[feature_names]
 
         # classify and post-process
-        results_dict = _apply_post_processing(features, true_labels, har_model, w_size, fs, nr_samples_mv, threshold, min_durations)
+        results_dict = _apply_post_processing(features, true_labels, har_model, w_size, fs, nr_samples_mv, threshold, min_durations, subject)
 
         # add to dictionaty
         subject_predictions_dict[subject] = results_dict
@@ -211,7 +211,8 @@ def _trim_data(data: np.ndarray, w_size: float, fs: int) -> Tuple[np.ndarray, in
 
 
 def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
-                           fs: int, nr_samples_mv: int, threshold: float, min_durations: Dict[int,int]) -> Dict[str, float]:
+                           fs: int, nr_samples_mv: int, threshold: float, min_durations: Dict[int,int],
+                           subject_id: str) -> Dict[str, float]:
     """
     Applies multiple post-processing schemes to the predictions of a classifier (Random Forest): majority voting,
     threshold tuning, heuristics, threshold tuning + majority voting, and threshold tuning + heuristics. Check the
@@ -280,13 +281,13 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
     results_dict = dict(zip(post_processing_schemes, accuracies))
 
     # plot predictions and save
-    _plot_all_predictions(labels, expanded_predictions, accuracies, post_processing_schemes, w_size)
+    _plot_all_predictions(labels, expanded_predictions, accuracies, post_processing_schemes, w_size, subject_id)
 
     return results_dict
 
 
-def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[np.ndarray], accuracies: List[float],
-                          post_processing_schemes: List[str], w_size: float) -> None:
+def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[int]], accuracies: List[float],
+                          post_processing_schemes: List[str], w_size: float, subject_id: str) -> None:
     """
     Generates and saves a figure with 6 plots. The first plot corresponds to true labels over time, and the other five plots
     correspond to the vanilla models and post-processing results over time.
@@ -308,8 +309,8 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[np.ndar
     # Plot each prediction
     for i, (pred, acc, name) in enumerate(zip(expanded_predictions, accuracies, post_processing_schemes)):
         axes[i + 1].plot(pred, color='darkorange')
-        axes[i + 1].set_title(f"{name}: {acc * 100:.2f}%", fontsize=18)
+        axes[i + 1].set_title(f"{name}: {acc}%", fontsize=18)
 
     plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))  # Leave space for subtitle
-    plt.savefig(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\post_processing_results_fig.png")
+    plt.savefig(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\post_processing_results_fig_{subject_id}.png")
     plt.show()
