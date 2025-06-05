@@ -254,11 +254,12 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
     if threshold is None:
 
         # find the best threshold
-        best_threshold = _find_best_threshold(y_pred_proba, y_pred, labels, 1, 0, w_size, fs)
+        best_threshold = _find_best_threshold(y_pred_proba, y_pred, labels, 0, 1, min_durations, w_size, fs)
 
         # use the best threshold for all post-processing methods
         threshold = best_threshold
 
+        print(best_threshold)
 
     y_pred_tt = threshold_tuning(y_pred_proba, y_pred,0,1, threshold)
 
@@ -329,10 +330,24 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[in
 
     plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))  # Leave space for subtitle
     plt.savefig(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\post_processing_results_fig_{subject_id}.png")
-    plt.show()
 
 
-def _find_best_threshold(probabilities, y_pred, true_labels, sit_label, stand_label, w_size, fs):
+def _find_best_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labels: np.ndarray, sit_label: int,
+                         stand_label: int, min_durations: Dict[int, float], w_size: float, fs: int) -> float:
+    """
+    Finds the best threshold value for post-processing, based on the accuracy of the threshold tuning + heuristics
+    method. Tests the following threshold values: 0.6, 0.65, 0.7, 0.75, 0.8, 0.85.
+
+    :param probabilities: np.ndarray of shape (n_samples, n_classes) containing the predicted probabilities
+    :param y_pred: np.ndarray containing the predicted class labels (as integers)
+    :param true_labels: np.ndarray containing the true labels
+    :param sit_label: int corresponding to the sitting class label
+    :param stand_label: int corresponding to the standing class label
+    :param min_durations: Dictionary mapping each class label to its minimum segment duration in seconds.
+    :param w_size: size of the window in seconds
+    :param fs: the sampling frequency
+    :return: float corresponding to the best threshold
+    """
 
     # variable to store the highest accuracy
     best_acc = 0
@@ -341,20 +356,28 @@ def _find_best_threshold(probabilities, y_pred, true_labels, sit_label, stand_la
     best_threshold = 0
 
     # iterate through different threshold values
-    for threshold in [0.60, 0.65, 0.70, 0.75, 0.80, 0.85]:
+    for threshold in [0.6, 0.65, 0.7, 0.75, 0.8, 0.85]:
 
         # adjust the prediction according to the threshold
         y_pred_tt = threshold_tuning(probabilities, y_pred, sit_label, stand_label, threshold)
 
+        # combine with heuristics
+        y_pred_tt_heur = heuristics_correction(y_pred_tt, w_size, min_durations)
+
         # expand classification to the size of the true label vector
+        y_pred_tt_heur_expanded = expand_classification(y_pred_tt_heur, w_size, fs)
         y_pred_tt_expanded = expand_classification(y_pred_tt, w_size, fs)
 
         # calculate accuracy
+        tt_heur_acc = accuracy_score(y_true=true_labels, y_pred=y_pred_tt_heur_expanded)
         tt_acc = accuracy_score(y_true=true_labels, y_pred=y_pred_tt_expanded)
 
+        print(f"threshold: {threshold}")
+        print(f"tt + heur: {tt_heur_acc}")
+
         # check if it's the highest accuracy and update variable
-        if tt_acc > best_acc:
-            best_acc = tt_acc
+        if tt_heur_acc > best_acc:
+            best_acc = tt_heur_acc
             best_threshold = threshold
 
     return best_threshold
