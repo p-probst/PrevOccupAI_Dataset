@@ -13,6 +13,7 @@ _pre_process_signals(...): Preprocesses the sensor data and label vector
 _trim_data(...): Trims the sensor data to accommodate the full windowing
 _apply_post_processing(...): Applies the post-processing schemes, implemented in post_process.py
 _plot_all_predictions(...): Generates and saves a plot with the post-processing results for each subject
+_find_best_threshold(...): Finds the threshold that produces the highest accuracy for threshold tuning + heuristics
 ------------------
 """
 
@@ -112,11 +113,11 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_d
         sensor_data, true_labels = _pre_process_signals(subject_data, sensor_names, w_size=w_size, fs=fs)
 
         # extract features
-        cfg = tsfel.load_json(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\cfg_file_production_model.json")
-        features = tsfel.time_series_features_extractor(cfg, sensor_data, window_size=int(w_size*100), fs=fs, header_names=sensor_names)
+        cfg = tsfel.load_json(f".\\HAR\\production_models\\{int(w_size*fs)}_w_size\\cfg_file_production_model.json")
+        features = tsfel.time_series_features_extractor(cfg, sensor_data, window_size=int(w_size*fs), fs=fs, header_names=sensor_names)
 
         # load the model
-        har_model, feature_names = _load_production_model(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\HAR_model_500.joblib")
+        har_model, feature_names = _load_production_model(f".\\HAR\\production_models\\{int(w_size*fs)}_w_size\\HAR_model_500.joblib")
 
         # get the features that are needed fot the classifier
         features = features[feature_names]
@@ -132,7 +133,7 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_d
     results_df = pd.DataFrame.from_dict(subject_predictions_dict, orient='index')
 
     # save dataframe as csv file
-    results_df.to_csv(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\post_processing_results.csv", index=True)
+    results_df.to_csv(f".\\HAR\\production_models\\{int(w_size*fs)}_w_size\\post_processing_results.csv", index=True)
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -259,8 +260,6 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
         # use the best threshold for all post-processing methods
         threshold = best_threshold
 
-        print(best_threshold)
-
     y_pred_tt = threshold_tuning(y_pred_proba, y_pred,0,1, threshold)
 
     # apply heuristics
@@ -355,6 +354,8 @@ def _find_best_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_lab
     # variable for holding the best threshold
     best_threshold = 0
 
+    print("Finding the best threshold:")
+
     # iterate through different threshold values
     for threshold in [0.6, 0.65, 0.7, 0.75, 0.8, 0.85]:
 
@@ -373,7 +374,7 @@ def _find_best_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_lab
         tt_acc = accuracy_score(y_true=true_labels, y_pred=y_pred_tt_expanded)
 
         print(f"threshold: {threshold}")
-        print(f"tt + heur: {tt_heur_acc}")
+        print(f"tt + heur: {tt_heur_acc} %")
 
         # check if it's the highest accuracy and update variable
         if tt_heur_acc > best_acc:
