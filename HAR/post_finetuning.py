@@ -76,6 +76,11 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: i
     # dictionaty for holding the results for all subjects
     subject_predictions_dict = {}
 
+    # dictionaty for holding the parameter optimization results for all subjects
+    subject_opt_mv_results = {}
+    subject_opt_tt_results = {}
+    subject_opt_heur_results = {}
+
     for subject in subject_folders:
 
         print("\n#----------------------------------------------------------------------#")
@@ -125,17 +130,33 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: i
         features = features[feature_names]
 
         # classify and post-process
-        results_dict = _apply_post_processing(features, true_labels, har_model, w_size, fs,
+        results_dict, opt_mv_results, opt_tt_results, opt_heur_results = _apply_post_processing(features, true_labels, har_model, w_size, fs,
                                                               nr_samples_mv, threshold, min_durations, subject)
 
         # add to dictionaty
         subject_predictions_dict[subject] = results_dict
+        subject_opt_mv_results[subject] = opt_mv_results
+        subject_opt_tt_results[subject] = opt_tt_results
+        subject_opt_heur_results[subject] = opt_heur_results
 
     # put dictionary into a pandas dataframe
     results_df = pd.DataFrame.from_dict(subject_predictions_dict, orient='index')
 
     # save dataframe as csv file
     results_df.to_csv(f".\\HAR\\production_models\\{int(w_size*fs)}_w_size\\post_processing_results.csv", index=True)
+
+    # if optimization was performed, save results
+    if any(v is not None for v in subject_opt_mv_results.values()):
+        pd.DataFrame.from_dict(subject_opt_mv_results, orient='index') \
+            .to_csv(f".\\HAR\\production_models\\{int(w_size * fs)}_w_size\\opt_mv_results.csv", index=True)
+
+    if any(v is not None for v in subject_opt_tt_results.values()):
+        pd.DataFrame.from_dict(subject_opt_tt_results, orient='index') \
+            .to_csv(f".\\HAR\\production_models\\{int(w_size * fs)}_w_size\\opt_tt_results.csv", index=True)
+
+    if any(v is not None for v in subject_opt_heur_results.values()):
+        pd.DataFrame.from_dict(subject_opt_heur_results, orient='index') \
+            .to_csv(f".\\HAR\\production_models\\{int(w_size * fs)}_w_size\\opt_heur_results.csv", index=True)
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -216,7 +237,7 @@ def _trim_data(data: np.ndarray, w_size: float, fs: int) -> Tuple[np.ndarray, in
 
 def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
                            fs: int, nr_samples_mv: Optional[int], threshold: Optional[float], min_durations: Optional[Dict[int,int]],
-                           subject_id: str) -> Dict[str, float]:
+                           subject_id: str) -> Tuple[Dict[str, float], Optional[Dict[int, float]], Optional[Dict[float, float]], Optional[Dict[str, float]]]:
     """
     Applies multiple post-processing schemes to the predictions of a classifier (Random Forest): majority voting,
     threshold tuning, heuristics, threshold tuning + majority voting, and threshold tuning + heuristics. Check the
@@ -245,6 +266,11 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
     # list for holding the expanded classifications
     expanded_predictions = []
 
+    # empty variables in case there is not optimization of the post-processing parameters
+    optimization_results_mv = None
+    optimization_results_tt = None
+    optimization_results_heur = None
+
     # classify the data - vanilla model
     y_pred = har_model.predict(features)
 
@@ -254,7 +280,7 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
     if nr_samples_mv is None:
 
         # find best window size for majority voting
-        best_window = _optimize_majority_voting_window(y_pred, labels, w_size, fs)
+        best_window, optimization_results_mv = _optimize_majority_voting_window(y_pred, labels, w_size, fs)
 
         # update value
         nr_samples_mv = best_window
@@ -262,13 +288,18 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
     if threshold is None:
 
         # find the best threshold
-        best_threshold = _optimize_threshold(y_pred_proba, y_pred, labels, 0, 1, w_size, fs)
+        best_threshold, optimization_results_tt = _optimize_threshold(y_pred_proba, y_pred, labels, 0, 1, w_size, fs)
 
         # use the best threshold for all post-processing methods
         threshold = best_threshold
 
     if min_durations is None:
-        pass
+
+        # find the best combination of durations
+        best_durations, optimization_results_heur = _optimize_heuristics_parameters(y_pred, labels, w_size, fs)
+
+        # update value
+        min_durations = best_durations
 
     # apply majority voting
     y_pred_mv = majority_vote_mid(y_pred, nr_samples_mv)
@@ -307,13 +338,10 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
     # save results to a dictionary
     results_dict = dict(zip(post_processing_schemes, accuracies))
 
-    # add threshold to the dictionary
-    results_dict['threshold_value'] = threshold
-
     # plot predictions and save
     _plot_all_predictions(labels, expanded_predictions, accuracies, post_processing_schemes, w_size, subject_id)
 
-    return results_dict
+    return results_dict, optimization_results_mv, optimization_results_tt, optimization_results_heur
 
 
 def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[int]], accuracies: List[float],
@@ -326,6 +354,7 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[in
     :param accuracies: List containing the accuracies of the vanilla model and the 4 post-processing schemes.
     :param post_processing_schemes: list of strings pertaining to the name of the post-processing type
     :param w_size: window size in seconds
+    :param subject_id: str with the subject identifier
     :return: None
     """
     n_preds = len(expanded_predictions)
