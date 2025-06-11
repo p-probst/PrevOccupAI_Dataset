@@ -29,12 +29,14 @@ from typing import Optional, List, Dict, Tuple
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
+from itertools import product
+from tqdm import tqdm
 
 # internal imports
 from raw_data_processor.load_sensor_data import load_data_from_same_recording
 from .load import load_labels_from_log
 from .post_process import majority_vote_mid, threshold_tuning, heuristics_correction, expand_classification
-from feature_extractor import pre_process_sensors
+from feature_extractor.feature_extractor import pre_process_sensors
 from constants import TXT
 
 
@@ -42,9 +44,9 @@ from constants import TXT
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
 
-def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], min_durations: Dict[int, int],
-                            fs: int, w_size: float, threshold: Optional[float] = None, load_sensors: Optional[List[str]] = None,
-                            nr_samples_mv: int = 20) -> None:
+def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: int, w_size: float,
+                            min_durations: Optional[Dict[int, int]] = None, threshold: Optional[float] = None,
+                            load_sensors: Optional[List[str]] = None, nr_samples_mv: Optional[int] = None) -> None:
     """
     Executes a post-processing pipeline for Human Activity Recognition (HAR) using a pre-trained model.
 
@@ -213,7 +215,7 @@ def _trim_data(data: np.ndarray, w_size: float, fs: int) -> Tuple[np.ndarray, in
 
 
 def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
-                           fs: int, nr_samples_mv: int, threshold: Optional[float], min_durations: Dict[int,int],
+                           fs: int, nr_samples_mv: Optional[int], threshold: Optional[float], min_durations: Optional[Dict[int,int]],
                            subject_id: str) -> Dict[str, float]:
     """
     Applies multiple post-processing schemes to the predictions of a classifier (Random Forest): majority voting,
@@ -230,6 +232,7 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
     :param nr_samples_mv: number of samples until the current position of the classifier
     :param threshold: The probability margin threshold for adjusting predictions. Default is 0.1.
     :param min_durations: Dictionary mapping each class label to its minimum segment duration in seconds.
+    :param subject_id: str with the subject identifier
     :return: Dict[str, float] where the keys is the post-processing scheme (name) and the value is the accuracy.
     """
 
@@ -245,21 +248,32 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
     # classify the data - vanilla model
     y_pred = har_model.predict(features)
 
-    # apply majority voting
-    y_pred_mv = majority_vote_mid(y_pred, nr_samples_mv)
-
-    # apply threshold tuning
+    # get class probabilities
     y_pred_proba = har_model.predict_proba(features)
 
-    # check if a threshold was given as input
+    if nr_samples_mv is None:
+
+        # find best window size for majority voting
+        best_window = _optimize_majority_voting_window(y_pred, labels, w_size, fs)
+
+        # update value
+        nr_samples_mv = best_window
+
     if threshold is None:
 
         # find the best threshold
-        best_threshold = _find_best_threshold(y_pred_proba, y_pred, labels, 0, 1, min_durations, w_size, fs)
+        best_threshold = _optimize_threshold(y_pred_proba, y_pred, labels, 0, 1, w_size, fs)
 
         # use the best threshold for all post-processing methods
         threshold = best_threshold
 
+    if min_durations is None:
+        pass
+
+    # apply majority voting
+    y_pred_mv = majority_vote_mid(y_pred, nr_samples_mv)
+
+    # apply threshold tuning
     y_pred_tt = threshold_tuning(y_pred_proba, y_pred,0,1, threshold)
 
     # apply heuristics
@@ -327,22 +341,21 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[in
         axes[i + 1].plot(pred, color='darkorange')
         axes[i + 1].set_title(f"{name}: {acc}%", fontsize=18)
 
-    plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))  # Leave space for subtitle
+    plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
     plt.savefig(f".\\HAR\\production_models\\{int(w_size*100)}_w_size\\post_processing_results_fig_{subject_id}.png")
 
 
-def _find_best_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labels: np.ndarray, sit_label: int,
-                         stand_label: int, min_durations: Dict[int, float], w_size: float, fs: int) -> float:
+def _optimize_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labels: np.ndarray, sit_label: int,
+                         stand_label: int, w_size: float, fs: int) -> Tuple[float, Dict[float, float]]:
     """
-    Finds the best threshold value for post-processing, based on the accuracy of the threshold tuning + heuristics
-    method. Tests the following threshold values: 0.6, 0.65, 0.7, 0.75, 0.8, 0.85.
+    Finds the best threshold value for post-processing, based on the accuracy of the threshold tuning
+    method. Tests the following threshold values: 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95.
 
     :param probabilities: np.ndarray of shape (n_samples, n_classes) containing the predicted probabilities
     :param y_pred: np.ndarray containing the predicted class labels (as integers)
     :param true_labels: np.ndarray containing the true labels
     :param sit_label: int corresponding to the sitting class label
     :param stand_label: int corresponding to the standing class label
-    :param min_durations: Dictionary mapping each class label to its minimum segment duration in seconds.
     :param w_size: size of the window in seconds
     :param fs: the sampling frequency
     :return: float corresponding to the best threshold
@@ -354,31 +367,138 @@ def _find_best_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_lab
     # variable for holding the best threshold
     best_threshold = 0
 
-    print("Finding the best threshold:")
+    # tuple containing the different threshold values to test
+    thresholds_tuple = [0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95]
+
+    # list for holding the accuracies for each threshold tested
+    acc_list = []
 
     # iterate through different threshold values
-    for threshold in [0.6, 0.65, 0.7, 0.75, 0.8, 0.85]:
+    for threshold in tqdm(thresholds_tuple, total=len(thresholds_tuple), desc="Optimizing threshold"):
 
         # adjust the prediction according to the threshold
         y_pred_tt = threshold_tuning(probabilities, y_pred, sit_label, stand_label, threshold)
 
-        # combine with heuristics
-        y_pred_tt_heur = heuristics_correction(y_pred_tt, w_size, min_durations)
-
         # expand classification to the size of the true label vector
-        y_pred_tt_heur_expanded = expand_classification(y_pred_tt_heur, w_size, fs)
         y_pred_tt_expanded = expand_classification(y_pred_tt, w_size, fs)
 
         # calculate accuracy
-        tt_heur_acc = accuracy_score(y_true=true_labels, y_pred=y_pred_tt_heur_expanded)
         tt_acc = accuracy_score(y_true=true_labels, y_pred=y_pred_tt_expanded)
 
+        # append to list
+        acc_list.append(round(tt_acc*100, 2))
+
         print(f"threshold: {threshold}")
-        print(f"tt + heur: {tt_heur_acc} %")
+        print(f"tt + heur: {round(tt_acc*100, 2)} %")
 
         # check if it's the highest accuracy and update variable
-        if tt_heur_acc > best_acc:
-            best_acc = tt_heur_acc
+        if tt_acc > best_acc:
+            best_acc = tt_acc
             best_threshold = threshold
 
-    return best_threshold
+    # save results to the dict
+    results_dict = dict(zip(thresholds_tuple, acc_list))
+
+    return best_threshold, results_dict
+
+
+def _optimize_majority_voting_window(y_pred: np.ndarray, true_labels: np.ndarray, w_size: float, fs: int) -> Tuple[int, Dict[int, float]]:
+
+    # variable for holding the best accuracy
+    best_acc = 0
+
+    # variable for holding the best window
+    best_window = 0
+
+    # tuple with different window values to test
+    windows_tuple = [5, 10, 15, 20]
+
+    # list for holding the accuracies for each threshold tested
+    acc_list = []
+
+    # iterate through various window sizes
+    for window in tqdm(windows_tuple, total=len(windows_tuple), desc="Optimizing majority voting window size"):
+
+        # adjust the prediction with majority voting
+        y_pred_mv = majority_vote_mid(y_pred, window)
+
+        # expand classification to the size of the true label vector
+        y_pred_mv_expanded = expand_classification(y_pred_mv, w_size, fs)
+
+        # calculate accuracy
+        mv_acc = accuracy_score(y_true=true_labels, y_pred=y_pred_mv_expanded)
+
+        # append to accuracies list
+        acc_list.append(round(mv_acc*100, 2))
+
+        # check if it's the highest accuracy and update variable
+        if mv_acc > best_acc:
+            best_acc = mv_acc
+            best_window = window
+
+    # save results to the dict
+    results_dict = dict(zip(windows_tuple, acc_list))
+
+    return best_window, results_dict
+
+
+def _optimize_heuristics_parameters(y_pred: np.ndarray, labels: np.ndarray, w_size: float, fs: int) \
+                                    -> Tuple[Dict[int, int], Dict[str, float]]:
+
+    # dictionary for holding the minimum durations for heuristics post-processing
+    best_params = {}
+
+    # variable for holding the highest accuracy
+    best_acc  = 0
+
+    # dictionary containing the durations to be tested for each class
+    class_duration_test = {
+        0: [20, 25, 30, 35, 40, 45],
+        1: [15, 20, 25, 30],
+        2: [5, 10, 15]
+    }
+
+    # list for holding the accuracies for each combination
+    list_acc = []
+
+    # list for holding each combination of durations as a Tuple (ex: (sitting duration, standing duration, walking duration) (30, 30, 10))
+    list_combinations = []
+
+    # Get list of class ids: [0, 1, 2]
+    class_ids = list(class_duration_test.keys())
+
+    # the lists of the durations to test for each class: [[20, 25, 30, 35, 40, 45], [20, 25, 30], [5, 10, 15]]
+    durations_lists = [class_duration_test[c] for c in class_ids]
+
+    # Calculate total number of iterations for tqdm
+    total_combinations = 1
+    for durations in durations_lists:
+        total_combinations *= len(durations)
+
+    # iterate through the various combinations of durations - avoids writing the 3 for loops
+    for duration_list in tqdm(product(*durations_lists), total=total_combinations, desc="Optimizing heuristics"):
+
+        # add combination list to the list
+        list_combinations.append(duration_list)
+
+        # update minimum durations dictionary
+        min_durations = {class_id: dur for class_id, dur in zip(class_ids, duration_list)}
+
+        # adjust the prediction with heuristics
+        y_pred_heur = heuristics_correction(y_pred, w_size, min_durations)
+
+        # expand  classification to the size of the label vector
+        y_pred_heur_expanded = expand_classification(y_pred_heur, w_size, fs)
+
+        # calculate accuracy
+        heur_acc = accuracy_score(y_true=labels, y_pred=y_pred_heur_expanded)
+        list_acc.append(round(heur_acc*100, 2))
+
+        if heur_acc > best_acc:
+            best_acc = heur_acc
+            best_params = min_durations.copy()
+
+    # save results to the dict
+    results_dict = {"-".join(map(str, comb)): acc for comb, acc in zip(list_combinations, list_acc)}
+
+    return best_params, results_dict
