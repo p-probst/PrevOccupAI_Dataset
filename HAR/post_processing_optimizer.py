@@ -4,16 +4,16 @@ Function for applying post-processing schemes to a prediction of a given classif
 Available Functions
 -------------------
 [Public]
-perform_post_processing(...): Executes a post-processing pipeline for HAR using a pre-trained model
+optimize_post_processing(...): Executes a post-processing pipeline for HAR using a pre-trained model
 
 -------------------
 [Private]
 _load_production_model(...): Loads the pre-trained model
-_pre_process_signals(...): Preprocesses the sensor data and label vector
-_trim_data(...): Trims the sensor data to accommodate the full windowing
-_apply_post_processing(...): Applies the post-processing schemes, implemented in post_process.py
+_evaluate_post_processing(...): Applies the post-processing schemes, implemented in post_process.py
 _plot_all_predictions(...): Generates and saves a plot with the post-processing results for each subject
-_find_best_threshold(...): Finds the threshold that produces the highest accuracy for threshold tuning + heuristics
+_optimize_threshold(...): Finds the threshold that produces the highest accuracy for threshold tuning
+_optimize_majority_voting_window(...): Finds the best window size for the majority voting post_processing scheme
+_optimize_heuristics_parameters(...): Finds the best combination of parameters (class durations) for heuristics post-processing
 ------------------
 """
 
@@ -36,7 +36,7 @@ from tqdm import tqdm
 from raw_data_processor.load_sensor_data import load_data_from_same_recording
 from .load import load_labels_from_log
 from .post_process import majority_vote_mid, threshold_tuning, heuristics_correction, expand_classification
-from feature_extractor.feature_extractor import pre_process_sensors
+from feature_extractor.feature_extractor import pre_process_signals
 from constants import TXT
 
 
@@ -44,9 +44,9 @@ from constants import TXT
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
 
-def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: int, w_size: float,
-                            min_durations: Optional[Dict[int, int]] = None, threshold: Optional[float] = None,
-                            load_sensors: Optional[List[str]] = None, nr_samples_mv: Optional[int] = None) -> None:
+def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: int, w_size: float,
+                             min_durations: Optional[Dict[int, int]] = None, threshold: Optional[float] = None,
+                             load_sensors: Optional[List[str]] = None, nr_samples_mv: Optional[int] = None) -> None:
     """
     Executes a post-processing pipeline for Human Activity Recognition (HAR) using a pre-trained model.
 
@@ -54,6 +54,8 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: i
     sensor data and corresponding labels, extracts features, classifies the data using a pre-trained HAR model,
     and applies post-processing logic to refine predictions. The results of the post-processing over all subjects
     are saved as a CSV file. This functions also generates and saves a plot for each subject with the results.
+
+    If the parameters for the post-processing schemes are not
 
     :param raw_data_path: path to the folder containing the subject folders
     :param label_map: A dictionary mapping activity strings to numeric labels.
@@ -73,10 +75,10 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: i
     # get the folders that contain the subject data. Subject data folders start with 'S' (e.g., S001)
     subject_folders = [folder for folder in subject_folders if folder.startswith('S')]
 
-    # dictionaty for holding the results for all subjects
+    # dictionary for holding the results for all subjects
     subject_predictions_dict = {}
 
-    # dictionaty for holding the parameter optimization results for all subjects
+    # dictionary for holding the parameter optimization results for all subjects
     subject_opt_mv_results = {}
     subject_opt_tt_results = {}
     subject_opt_heur_results = {}
@@ -117,7 +119,7 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: i
         sensor_names = subject_data.columns.values[1:-1]
 
         # pre process signals
-        sensor_data, true_labels = _pre_process_signals(subject_data, sensor_names, w_size=w_size, fs=fs)
+        sensor_data, true_labels = pre_process_signals(subject_data, sensor_names, w_size=w_size, fs=fs)
 
         # extract features
         cfg = tsfel.load_json(f".\\HAR\\production_models\\{int(w_size*fs)}_w_size\\cfg_file_production_model.json")
@@ -130,10 +132,10 @@ def perform_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: i
         features = features[feature_names]
 
         # classify and post-process
-        results_dict, opt_mv_results, opt_tt_results, opt_heur_results = _apply_post_processing(features, true_labels, har_model, w_size, fs,
-                                                              nr_samples_mv, threshold, min_durations, subject)
+        results_dict, opt_mv_results, opt_tt_results, opt_heur_results = _evaluate_post_processing(features, true_labels, har_model, w_size, fs,
+                                                                                                   nr_samples_mv, threshold, min_durations, subject)
 
-        # add to dictionaty
+        # add to dictionary
         subject_predictions_dict[subject] = results_dict
         subject_opt_mv_results[subject] = opt_mv_results
         subject_opt_tt_results[subject] = opt_tt_results
@@ -187,63 +189,16 @@ def _load_production_model(model_path: str) -> Tuple[RandomForestClassifier, Lis
     return har_model, feature_names
 
 
-def _pre_process_signals(subject_data: pd.DataFrame, sensor_names: List[str], w_size: float,
-                         fs: int) -> Tuple[np.ndarray, np.ndarray]:
+def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
+                              fs: int, nr_samples_mv: Optional[int], threshold: Optional[float], min_durations: Optional[Dict[int,int]],
+                              subject_id: str) -> Tuple[Dict[str, float], Optional[Dict[int, float]], Optional[Dict[float, float]], Optional[Dict[str, float]]]:
     """
-    Pre-processes the sensors contained in data_array according to their sensor type. Removes samples from the
-    impulse response of the filters and trims the data and label vector to accommodate full windowing of the data.
+    Evaluates the performance of multiple post-processing schemes applied to the predictions of a
+    classifier in a Human Activity Recognition pipeline. The function performs the
+    optimization of parameters for each post-processing method if these are not provided. The post-processing methods
+    applied are: majority voting, threshold tuning, heuristics, threshold tuning + majority voting, threshold tuning + heuristics.
+    This function also generates a plot with the results for all the post-processing schemes.
 
-    :param subject_data: pandas.DataFrame containing the sensor data
-    :param sensor_names: list of strings correspondent to the sensor names
-    :param w_size: window size in seconds
-    :param fs: the sampling frequency
-    :return: the processed sensor data and label vector
-    """
-
-    # convert data to numpy array
-    sensor_data = subject_data.values[:,1:-1]
-
-    # get the label vector
-    labels = subject_data.values[:, -1]
-
-    # pre-process the data
-    sensor_data = pre_process_sensors(sensor_data, sensor_names)
-
-    # remove impulse response
-    sensor_data = sensor_data[250:,:]
-    labels = labels[250:]
-
-    # trim the data to accommodate full windowing
-    sensor_data, to_trim = _trim_data(sensor_data, w_size=w_size, fs=fs)
-    labels = labels[:-to_trim]
-
-    return sensor_data, labels
-
-def _trim_data(data: np.ndarray, w_size: float, fs: int) -> Tuple[np.ndarray, int]:
-    """
-    Function to get the amount that needs to be trimmed from the data to accommodate full windowing of the data
-    (i.e., not excluding samples at the end).
-    :param data: numpy.array containing the data
-    :param w_size: Window size in seconds
-    :param fs: Sampling rate
-    :return: the trimmed data and the amount of samples that needed to be trimmed.
-    """
-
-    # calculate the amount that has to be trimmed of the signal
-    to_trim = int(data.shape[0] % (w_size * fs))
-
-    return data[:-to_trim, :], to_trim
-
-
-def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
-                           fs: int, nr_samples_mv: Optional[int], threshold: Optional[float], min_durations: Optional[Dict[int,int]],
-                           subject_id: str) -> Tuple[Dict[str, float], Optional[Dict[int, float]], Optional[Dict[float, float]], Optional[Dict[str, float]]]:
-    """
-    Applies multiple post-processing schemes to the predictions of a classifier (Random Forest): majority voting,
-    threshold tuning, heuristics, threshold tuning + majority voting, and threshold tuning + heuristics. Check the
-    documentation of these post-processing methods in post_process.py. This function generates a plot with the
-    vanilla accuracy and the post-processing accuracies for each subject, as well as a .csv file containing the
-    results for all subjects.
 
     :param features: numpy.array of shape (n_samples, n_features) containing the features
     :param labels: numpy.array containing the true class labels
@@ -254,7 +209,11 @@ def _apply_post_processing(features: np.ndarray, labels: np.ndarray, har_model: 
     :param threshold: The probability margin threshold for adjusting predictions. Default is 0.1.
     :param min_durations: Dictionary mapping each class label to its minimum segment duration in seconds.
     :param subject_id: str with the subject identifier
-    :return: Dict[str, float] where the keys is the post-processing scheme (name) and the value is the accuracy.
+    :return: A tuple containing:
+        - results_dict (Dict[str, float]): Accuracy (%) for each post-processing scheme.
+        - optimization_results_mv (Optional[Dict[int, float]]): Accuracy results for each majority voting window tested.
+        - optimization_results_tt (Optional[Dict[float, float]]): Accuracy results for each threshold tested.
+        - optimization_results_heur (Optional[Dict[str, float]]): Accuracy results for each heuristics combination tested.
     """
 
     # list for holding the lists with the predictions
@@ -377,7 +336,7 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[in
 def _optimize_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labels: np.ndarray, sit_label: int,
                          stand_label: int, w_size: float, fs: int) -> Tuple[float, Dict[float, float]]:
     """
-    Finds the best threshold value for post-processing, based on the accuracy of the threshold tuning
+    Finds the best threshold value for post-processing based on the accuracy of the threshold tuning
     method. Tests the following threshold values: 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95.
 
     :param probabilities: np.ndarray of shape (n_samples, n_classes) containing the predicted probabilities
@@ -387,7 +346,9 @@ def _optimize_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labe
     :param stand_label: int corresponding to the standing class label
     :param w_size: size of the window in seconds
     :param fs: the sampling frequency
-    :return: float corresponding to the best threshold
+    :return: A Tuple containing:
+                - float corresponding to the best threshold
+                - Dictionary with the accuracy results for each threshold tested.
     """
 
     # variable to store the highest accuracy
@@ -430,6 +391,18 @@ def _optimize_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labe
 
 def _optimize_majority_voting_window(y_pred: np.ndarray, true_labels: np.ndarray, w_size: float, fs: int) -> Tuple[int, Dict[int, float]]:
 
+    """
+    Optimizes the window size for the majority voting post-processing method by evaluating multiple values of
+    window sizes and selecting the one that results in the highest accuracy.
+
+    :param y_pred: 1D numpy array containing the predicted class labels
+    :param true_labels: 1D numpy array of ground truth class labels
+    :param w_size: window size in seconds of each prediction window
+    :param fs: the sampling frequency
+    :return: A tuple containing:
+                - best_window (int): The window size that resulted in the highest accuracy.
+                - results_dict (Dict[int, float]): Dictionary with the accuracy results for each window tested.
+    """
     # variable for holding the best accuracy
     best_acc = 0
 
@@ -470,7 +443,17 @@ def _optimize_majority_voting_window(y_pred: np.ndarray, true_labels: np.ndarray
 
 def _optimize_heuristics_parameters(y_pred: np.ndarray, labels: np.ndarray, w_size: float, fs: int) \
                                     -> Tuple[Dict[int, int], Dict[str, float]]:
+    """
+    Performs a grid search to find the optimal minimum duration thresholds for heuristic-based post-processing.
 
+    :param y_pred: 1D numpy array containing the predicted labels
+    :param labels: 1D numpy array of ground truth class labels
+    :param w_size: window size in seconds of each prediction window
+    :param fs: the sampling frequency
+    :return: A tuple containing:
+            - a Dictionary w«ith the minimum class durations that resulted in the highest accuracy
+            - a dictionary containing the accuracy results for each combination tested
+    """
     # dictionary for holding the minimum durations for heuristics post-processing
     best_params = {}
 

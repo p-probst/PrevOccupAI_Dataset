@@ -5,7 +5,7 @@ import os
 
 from pywt import threshold
 
-from HAR.post_finetuning import perform_post_processing
+from HAR.post_processing_optimizer import optimize_post_processing
 # internal imports
 from constants import VALID_SENSORS, SEGMENTED_DATA_FOLDER, EXTRACTED_FEATURES_FOLDER, RANDOM_SEED
 from raw_data_processor import generate_segmented_dataset
@@ -82,7 +82,7 @@ if __name__ == '__main__':
             label_map = {'sitting': 0, 'standing': 1, 'walking': 2}
 
             print("\nPerforming post processing")
-            perform_post_processing(raw_data_path, label_map, fs=100, w_size=5.0)
+            optimize_post_processing(raw_data_path, label_map, fs=100, w_size=5.0)
 
 
 

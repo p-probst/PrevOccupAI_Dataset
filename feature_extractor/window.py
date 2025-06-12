@@ -8,6 +8,7 @@ get_sliding_windows_indices(...): Function to obtain window indices with an adju
 window_data(...): Function to slice the data into windows defined by indices
 window_scaling(...): Performs scaling on each window using the provided scaler.
 validate_scaler_input(...): Checks whether the provided scaler is valid
+trim_data(...): Trims the sensor data to accommodate the full windowing
 ------------------
 [Private]
 None
@@ -18,6 +19,7 @@ None
 # imports
 # ------------------------------------------------------------------------------------------------------------------- #
 import numpy as np
+from typing import Tuple
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # constants
@@ -138,6 +140,21 @@ def validate_scaler_input(scaler: str) -> None:
         raise ValueError(f"The window scaler you have chosen is not supported. Chosen scaler: {scaler}."
                          f"\nPlease choose from the following: {SCALERS}")
 
+
+def trim_data(data: np.ndarray, w_size: float, fs: int) -> Tuple[np.ndarray, int]:
+    """
+    Function to get the amount that needs to be trimmed from the data to accommodate full windowing of the data
+    (i.e., not excluding samples at the end).
+    :param data: numpy.array containing the data
+    :param w_size: Window size in seconds
+    :param fs: Sampling rate
+    :return: the trimmed data and the amount of samples that needed to be trimmed.
+    """
+
+    # calculate the amount that has to be trimmed of the signal
+    to_trim = int(data.shape[0] % (w_size * fs))
+
+    return data[:-to_trim, :], to_trim
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
