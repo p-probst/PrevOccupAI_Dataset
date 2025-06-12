@@ -417,9 +417,6 @@ def _optimize_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labe
         # append to list
         acc_list.append(round(tt_acc*100, 2))
 
-        print(f"threshold: {threshold}")
-        print(f"tt + heur: {round(tt_acc*100, 2)} %")
-
         # check if it's the highest accuracy and update variable
         if tt_acc > best_acc:
             best_acc = tt_acc
