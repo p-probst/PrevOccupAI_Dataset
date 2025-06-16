@@ -225,6 +225,9 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     # list for holding the expanded classifications
     expanded_predictions = []
 
+    # list for holding the durations
+    class_duration = []
+
     # empty variables in case there is not optimization of the post-processing parameters
     optimization_results_mv = None
     optimization_results_tt = None
@@ -281,6 +284,10 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     # extend classifications and calculate the accuracies
     for prediction in predictions:
 
+        # calculate the durations
+        dur = _calculate_class_percentages(prediction)
+        class_duration.append(dur)
+
         # expand the predictions to the size of the original signal
         y_pred_expanded = expand_classification(prediction, w_size = w_size, fs=fs)
         expanded_predictions.append(y_pred_expanded)
@@ -291,10 +298,22 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
 
 
     # get a list containing the type of post-processing schemes
-    post_processing_schemes = ["vanilla model acc", "majority voting acc", "threshold tuning acc", "heuristics acc",
-                               "tt + mv acc", "tt + heur acc"]
+    post_processing_schemes = ["vanilla model", "majority voting", "threshold tuning", "heuristics",
+                               "tt + mv", "tt + heur"]
 
-    # save results to a dictionary
+    # create dict with the class durations for all post-processing schemes
+    durations_dict = dict(zip(post_processing_schemes, class_duration))
+
+    # calculate the percentage of the true labels
+    true_durations = _calculate_class_percentages(labels)
+
+    # add to dictionary
+    durations_dict["true_dur"] = true_durations
+
+    # put dictionary into a pandas dataframe
+    durations_df = pd.DataFrame.from_dict(durations_dict, orient='index')
+
+    # save accuracy results to a dictionary
     results_dict = dict(zip(post_processing_schemes, accuracies))
 
     # plot predictions and save
@@ -511,3 +530,26 @@ def _optimize_heuristics_parameters(y_pred: np.ndarray, labels: np.ndarray, w_si
     results_dict = {"-".join(map(str, comb)): acc for comb, acc in zip(list_combinations, list_acc)}
 
     return best_params, results_dict
+
+
+def _calculate_class_percentages(label_vector: np.ndarray) -> Dict[int, int]:
+
+    # dictionary for holding the percentages of each class
+    results_dict = {}
+
+    # count how many unique values/labels there are
+    unique_labels, counts = np.unique(label_vector, return_counts=True)
+
+    # calculate the total amount of instances
+    total_labels = len(label_vector)
+
+    # iterate through the various classes and number of instances of each class
+    for label, count in zip(unique_labels, counts):
+
+        # calculate the percentage
+        percentage = (count / total_labels) * 100
+
+        # save in dictionary
+        results_dict[label] = percentage
+
+    return results_dict
