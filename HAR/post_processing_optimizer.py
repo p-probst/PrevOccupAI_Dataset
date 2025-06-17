@@ -27,7 +27,7 @@ import joblib
 import tsfel
 from typing import Optional, List, Dict, Tuple
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import matplotlib.pyplot as plt
 from itertools import product
 from tqdm import tqdm
@@ -38,6 +38,7 @@ from .load import load_labels_from_log
 from .post_process import majority_vote_mid, threshold_tuning, heuristics_correction, expand_classification
 from feature_extractor.feature_extractor import pre_process_signals
 from constants import TXT
+from file_utils import create_dir
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -141,24 +142,33 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
         subject_opt_tt_results[subject] = opt_tt_results
         subject_opt_heur_results[subject] = opt_heur_results
 
-    # put dictionary into a pandas dataframe
-    results_df = pd.DataFrame.from_dict(subject_predictions_dict, orient='index')
+    # generate output dir if it doesnt exist
+    output_path = create_dir(".\\HAR\\production_models", f"{int(w_size*fs)}_w_size")
 
-    # save dataframe as csv file
-    results_df.to_csv(f".\\HAR\\production_models\\{int(w_size*fs)}_w_size\\post_processing_results.csv", index=True)
+    # Save one CSV per metric
+    metric_dfs = {
+        metric: pd.DataFrame.from_dict(
+            {subject: results[metric] for subject, results in subject_predictions_dict.items()},
+            orient='index'
+        )
+        for metric in ["accuracy", "precision", "recall", "f1_score"]
+    }
+
+    for metric, df in metric_dfs.items():
+        df.to_csv(os.path.join(output_path, f"post_processing_{metric}_results.csv"), index=True)
 
     # if optimization was performed, save results
     if any(v is not None for v in subject_opt_mv_results.values()):
         pd.DataFrame.from_dict(subject_opt_mv_results, orient='index') \
-            .to_csv(f".\\HAR\\production_models\\{int(w_size * fs)}_w_size\\opt_mv_results.csv", index=True)
+            .to_csv(os.path.join(output_path,"opt_mv_results.csv"), index=True)
 
     if any(v is not None for v in subject_opt_tt_results.values()):
         pd.DataFrame.from_dict(subject_opt_tt_results, orient='index') \
-            .to_csv(f".\\HAR\\production_models\\{int(w_size * fs)}_w_size\\opt_tt_results.csv", index=True)
+            .to_csv(os.path.join(output_path,"opt_tt_results.csv"), index=True)
 
     if any(v is not None for v in subject_opt_heur_results.values()):
         pd.DataFrame.from_dict(subject_opt_heur_results, orient='index') \
-            .to_csv(f".\\HAR\\production_models\\{int(w_size * fs)}_w_size\\opt_heur_results.csv", index=True)
+            .to_csv(os.path.join(output_path,"opt_heur_results.csv"), index=True)
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -191,13 +201,13 @@ def _load_production_model(model_path: str) -> Tuple[RandomForestClassifier, Lis
 
 def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
                               fs: int, nr_samples_mv: Optional[int], threshold: Optional[float], min_durations: Optional[Dict[int,int]],
-                              subject_id: str) -> Tuple[Dict[str, float], Optional[Dict[int, float]], Optional[Dict[float, float]], Optional[Dict[str, float]]]:
+                              subject_id: str) -> Tuple[Dict[str, Dict[str, float]], Optional[Dict[int, float]], Optional[Dict[float, float]], Optional[Dict[str, float]]]:
     """
     Evaluates the performance of multiple post-processing schemes applied to the predictions of a
     classifier in a Human Activity Recognition pipeline. The function performs the
     optimization of parameters for each post-processing method if these are not provided. The post-processing methods
     applied are: majority voting, threshold tuning, heuristics, threshold tuning + majority voting, threshold tuning + heuristics.
-    This function also generates a plot with the results for all the post-processing schemes.
+    This function also generates a plot with the acc results for all the post-processing schemes.
 
 
     :param features: numpy.array of shape (n_samples, n_features) containing the features
@@ -210,7 +220,7 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     :param min_durations: Dictionary mapping each class label to its minimum segment duration in seconds.
     :param subject_id: str with the subject identifier
     :return: A tuple containing:
-        - results_dict (Dict[str, float]): Accuracy (%) for each post-processing scheme.
+        - metrics_dict (Dict[str, Dict[str, float]]): nested dictionary with the accuracy, precision, recall and f1 sores for all post processing schemes.
         - optimization_results_mv (Optional[Dict[int, float]]): Accuracy results for each majority voting window tested.
         - optimization_results_tt (Optional[Dict[float, float]]): Accuracy results for each threshold tested.
         - optimization_results_heur (Optional[Dict[str, float]]): Accuracy results for each heuristics combination tested.
@@ -219,8 +229,11 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     # list for holding the lists with the predictions
     predictions = []
 
-    # list for holding accuracies
+    # lists for holding the metrics
     accuracies = []
+    precisions = []
+    recalls = []
+    f1_scores = []
 
     # list for holding the expanded classifications
     expanded_predictions = []
@@ -281,7 +294,7 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     # append predictions to list
     predictions += [y_pred, y_pred_mv, y_pred_tt, y_pred_heur, y_pred_tt_mv, y_pred_tt_heur]
 
-    # extend classifications and calculate the accuracies
+    # extend classifications and calculate the metrics
     for prediction in predictions:
 
         # calculate the durations
@@ -296,6 +309,17 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
         accuracy = accuracy_score(labels, y_pred_expanded)
         accuracies.append(round(accuracy*100, 2))
 
+        # calculate precision
+        precision = precision_score(labels, y_pred_expanded)
+        precisions.append(round(precision*100, 2))
+
+        # calculate recall
+        recall = recall_score(labels, y_pred_expanded)
+        recalls.append(round(recall* 100, 2))
+
+        # calculate f1-score
+        f1 = f1_score(labels, y_pred_expanded)
+        f1_scores.append(round(f1* 100, 2))
 
     # get a list containing the type of post-processing schemes
     post_processing_schemes = ["vanilla model", "majority voting", "threshold tuning", "heuristics",
@@ -311,15 +335,26 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     durations_dict["true_dur"] = true_durations
 
     # put dictionary into a pandas dataframe
-    durations_df = pd.DataFrame.from_dict(durations_dict, orient='index')
+    durations_df = pd.DataFrame.from_dict(durations_dict)
 
-    # save accuracy results to a dictionary
-    results_dict = dict(zip(post_processing_schemes, accuracies))
+    # create output path for  the durations
+    durations_outpath = create_dir(f".\\HAR\\production_models\\{int(w_size * fs)}_w_size", "durations")
+
+    # save results
+    durations_df.to_csv(durations_outpath, index=True)
+
+    # save metrics results to a dictionary
+    metrics_results = {
+        "accuracy": dict(zip(post_processing_schemes, accuracies)),
+        "precision": dict(zip(post_processing_schemes, precisions)),
+        "recall": dict(zip(post_processing_schemes, recalls)),
+        "f1_score": dict(zip(post_processing_schemes, f1_scores)),
+    }
 
     # plot predictions and save
     _plot_all_predictions(labels, expanded_predictions, accuracies, post_processing_schemes, w_size, subject_id)
 
-    return results_dict, optimization_results_mv, optimization_results_tt, optimization_results_heur
+    return metrics_results, optimization_results_mv, optimization_results_tt, optimization_results_heur
 
 
 def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[int]], accuracies: List[float],
