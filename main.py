@@ -80,9 +80,10 @@ if __name__ == '__main__':
 
             raw_data_path = "G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\work_simulation\\raw_data"
             label_map = {'sitting': 0, 'standing': 1, 'walking': 2}
+            min_durations_dict = {0: 20, 1: 30, 2: 5}
 
             print("\nPerforming post processing")
-            optimize_post_processing(raw_data_path, label_map, fs=100, w_size=5.0)
+            optimize_post_processing(raw_data_path, label_map, fs=100, w_size=5.0, min_durations=min_durations_dict, threshold=0.85, nr_samples_mv=17)
 
 
 

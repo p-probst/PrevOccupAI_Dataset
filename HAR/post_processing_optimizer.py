@@ -14,6 +14,7 @@ _plot_all_predictions(...): Generates and saves a plot with the post-processing 
 _optimize_threshold(...): Finds the threshold that produces the highest accuracy for threshold tuning
 _optimize_majority_voting_window(...): Finds the best window size for the majority voting post_processing scheme
 _optimize_heuristics_parameters(...): Finds the best combination of parameters (class durations) for heuristics post-processing
+_calculate_class_percentages(...): Calculates the percentage of each class based on the label vector.
 ------------------
 """
 
@@ -145,8 +146,9 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
     # get the project path
     project_path = os.getcwd()
 
-    # generate a folder path to store the model and confusion matrix
-    output_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{int(w_size * fs)}_w_size"))
+    # generate a folder path to store the metrics and parameter optimization
+    metrics_output_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{int(w_size * fs)}_w_size", "metrics"))
+    opt_output_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{int(w_size * fs)}_w_size", "parameter_optimization"))
 
     # Save one CSV per metric
     metric_dfs = {
@@ -158,20 +160,20 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
     }
 
     for metric, df in metric_dfs.items():
-        df.to_csv(os.path.join(output_path, "metrics", f"post_processing_{metric}_results.csv"), index=True)
+        df.to_csv(os.path.join(metrics_output_path, f"COMMON_post_processing_{metric}_results.csv"), index=True)
 
     # if optimization was performed, save results
     if any(v is not None for v in subject_opt_mv_results.values()):
         pd.DataFrame.from_dict(subject_opt_mv_results, orient='index') \
-            .to_csv(os.path.join(output_path, "parameter_optimization", "opt_mv_results.csv"), index=True)
+            .to_csv(os.path.join(opt_output_path, "opt_mv_acc_results.csv"), index=True)
 
     if any(v is not None for v in subject_opt_tt_results.values()):
         pd.DataFrame.from_dict(subject_opt_tt_results, orient='index') \
-            .to_csv(os.path.join(output_path,"parameter_optimization", "opt_tt_results.csv"), index=True)
+            .to_csv(os.path.join(opt_output_path, "opt_tt_acc_results.csv"), index=True)
 
     if any(v is not None for v in subject_opt_heur_results.values()):
         pd.DataFrame.from_dict(subject_opt_heur_results, orient='index') \
-            .to_csv(os.path.join(output_path, "parameter_optimization", "opt_heur_results.csv"), index=True)
+            .to_csv(os.path.join(opt_output_path, "opt_heur_acc_results.csv"), index=True)
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -300,28 +302,28 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     # extend classifications and calculate the metrics
     for prediction in predictions:
 
-        # calculate the durations
-        dur = _calculate_class_percentages(prediction)
-        class_duration.append(dur)
-
         # expand the predictions to the size of the original signal
         y_pred_expanded = expand_classification(prediction, w_size = w_size, fs=fs)
         expanded_predictions.append(y_pred_expanded)
+
+        # calculate the durations
+        dur = _calculate_class_percentages(y_pred_expanded)
+        class_duration.append(dur)
 
         # calculate accuracy
         accuracy = accuracy_score(labels, y_pred_expanded)
         accuracies.append(round(accuracy*100, 2))
 
         # calculate precision
-        precision = precision_score(labels, y_pred_expanded, average='micro')
+        precision = precision_score(labels, y_pred_expanded, average='weighted')
         precisions.append(round(precision*100, 2))
 
         # calculate recall
-        recall = recall_score(labels, y_pred_expanded, average='micro')
+        recall = recall_score(labels, y_pred_expanded, average='weighted')
         recalls.append(round(recall* 100, 2))
 
         # calculate f1-score
-        f1 = f1_score(labels, y_pred_expanded, average='micro')
+        f1 = f1_score(labels, y_pred_expanded, average='weighted')
         f1_scores.append(round(f1* 100, 2))
 
     # get a list containing the type of post-processing schemes
@@ -347,7 +349,7 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     durations_outpath = create_dir(project_path, os.path.join("HAR", "production_models", f"{int(w_size * fs)}_w_size", "durations"))
 
     # save results
-    durations_df.to_csv(os.path.join(durations_outpath, f"{subject_id}_class_percentages.csv"), index=True)
+    durations_df.to_csv(os.path.join(durations_outpath, f"COMMON_{subject_id}_class_percentages.csv"), index=True)
 
     # save metrics results to a dictionary
     metrics_results = {
@@ -400,7 +402,7 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[in
                                    os.path.join("HAR", "production_models", f"{int(w_size * 100)}_w_size", "plots"))
 
     # save plots
-    plt.savefig(os.path.join(plots_output_path, f"post_processing_results_fig_{subject_id}.png"))
+    plt.savefig(os.path.join(plots_output_path, f"COMMON_post_processing_results_fig_{subject_id}.png"))
 
 
 def _optimize_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labels: np.ndarray, sit_label: int,
@@ -583,7 +585,13 @@ def _optimize_heuristics_parameters(y_pred: np.ndarray, labels: np.ndarray, w_si
     return best_params, results_dict
 
 
-def _calculate_class_percentages(label_vector: np.ndarray) -> Dict[int, int]:
+def _calculate_class_percentages(label_vector: List[int]) -> Dict[int, int]:
+    """
+    Calculates the percentage of each class based on the label vector.
+
+    :param label_vector: a list containing the labels
+    :return: A dictionary where each key is the label and the value corresponds to the percentage.
+    """
 
     # dictionary for holding the percentages of each class
     results_dict = {}
