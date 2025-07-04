@@ -6,6 +6,7 @@ Available Functions
 [Public]
 load_features(...): loads the extracted features from all the subjects.
 load_labels_from_log(...): loads the labels from a txt file and generates a label vector
+load_production_model(...): Loads the pre-trained model
 ------------------
 [Private]
 _get_feature_names_and_instances(...): Extracts feature names and determines the number of instances per sub-class based on the selected balancing strategy.
@@ -24,6 +25,8 @@ import numpy as np
 import pandas as pd
 from typing import Tuple, List, Dict
 from tqdm import tqdm
+import joblib
+from sklearn.ensemble import RandomForestClassifier
 
 # internal imports
 from constants import CLASS_INSTANCES_JSON, FEATURE_COLS_KEY, SUB_ACTIVITIES_WALK_LABELS, SUB_ACTIVITIES_STAND_LABELS, \
@@ -192,6 +195,31 @@ def load_labels_from_log(filepath: str, label_mapping: Dict[str, int], num_sampl
     label_vector.extend([last_label] * num_missing_labels)
 
     return label_vector
+
+
+def load_production_model(model_path: str) -> Tuple[RandomForestClassifier, List[str]]:
+    """
+    Loads the production model
+    :param model_path: path o the model
+    :return: a tuple containing the model and the list of features used
+    """
+    # load the classifier
+    har_model = joblib.load(model_path)
+
+    # print model name
+    print(f"model: {type(har_model).__name__}")
+    print(f"\nhyperparameters: {har_model.get_params()}")
+
+    # print the classes that the model saw during training
+    print(f"\nclasses: {har_model.classes_}")
+
+    # get the features that the model was trained with
+    feature_names = har_model.feature_names_in_
+    print(f"\nnumber of features: {len(feature_names)}")
+    print(f"features: {feature_names}")
+
+    return har_model, feature_names
+
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #

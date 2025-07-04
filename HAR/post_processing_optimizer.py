@@ -8,7 +8,6 @@ optimize_post_processing(...): Executes a post-processing pipeline for HAR using
 
 -------------------
 [Private]
-_load_production_model(...): Loads the pre-trained model
 _evaluate_post_processing(...): Applies the post-processing schemes, implemented in post_process.py
 _plot_all_predictions(...): Generates and saves a plot with the post-processing results for each subject
 _optimize_threshold(...): Finds the threshold that produces the highest accuracy for threshold tuning
@@ -35,7 +34,7 @@ from tqdm import tqdm
 
 # internal imports
 from raw_data_processor.load_sensor_data import load_data_from_same_recording
-from .load import load_labels_from_log
+from .load import load_labels_from_log, load_production_model
 from .post_process import majority_vote_mid, threshold_tuning, heuristics_correction, expand_classification
 from feature_extractor.feature_extractor import pre_process_signals
 from constants import TXT
@@ -128,7 +127,7 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
         features = tsfel.time_series_features_extractor(cfg, sensor_data, window_size=int(w_size*fs), fs=fs, header_names=sensor_names)
 
         # load the model
-        har_model, feature_names = _load_production_model(f".\\HAR\\production_models\\{int(w_size*fs)}_w_size\\HAR_model_500.joblib")
+        har_model, feature_names = load_production_model(f".\\HAR\\production_models\\{int(w_size*fs)}_w_size\\HAR_model_500.joblib")
 
         # get the features that are needed fot the classifier
         features = features[feature_names]
@@ -179,29 +178,6 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
-
-def _load_production_model(model_path: str) -> Tuple[RandomForestClassifier, List[str]]:
-    """
-    Loads the production model
-    :param model_path: path o the model
-    :return: a tuple containing the model and the list of features used
-    """
-    # load the classifier
-    har_model = joblib.load(model_path)
-
-    # print model name
-    print(f"model: {type(har_model).__name__}")
-    print(f"\nhyperparameters: {har_model.get_params()}")
-
-    # print the classes that the model saw during training
-    print(f"\nclasses: {har_model.classes_}")
-
-    # get the features that the model was trained with
-    feature_names = har_model.feature_names_in_
-    print(f"\nnumber of features: {len(feature_names)}")
-    print(f"features: {feature_names}")
-
-    return har_model, feature_names
 
 
 def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
