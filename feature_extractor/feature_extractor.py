@@ -208,6 +208,7 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
 
                 print(f"No files found for activity: {activity}. Skipping feature extraction for this activity.")
 
+        # TODO: potential bug if no files are found
         # concatenate the features for all activities into a single file
         subject_features = pd.concat(feature_df_list, axis=0, ignore_index=True)
 

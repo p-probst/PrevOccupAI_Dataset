@@ -1,0 +1,448 @@
+"""
+Functions for generating dataset for deep learning models. The data consists of windowed data. Thus, for each subject
+there N windows are going to be generated for each activity, where N corresponds to the number of windows extracted from
+each activity. The N does vary between activities as each has a somewhat different recording length. Thus, an imbalanced
+dataset is generated. (Class balancing is performed when loading the Dataset before passing it to the DL model)
+
+Available Functions
+-------------------
+[Public]
+
+------------------
+[Private]
+None
+------------------
+"""
+
+# ------------------------------------------------------------------------------------------------------------------- #
+# imports
+# ------------------------------------------------------------------------------------------------------------------- #
+from typing import List, Dict, Union, Tuple, Any
+import os
+import numpy as np
+import json
+
+# internal imports
+from constants import NPY, VALID_ACTIVITIES, VALID_FILE_TYPES, VALID_SENSORS, ACC, GYR, MAG, MAIN_ACTIVITY_LABELS, \
+    SUB_ACTIVITIES_STAND_LABELS, SUB_ACTIVITIES_WALK_LABELS, ACTIVITY_MAIN_SUB_CLASS, MAIN_CLASS_KEY, \
+    CLASS_INSTANCES_JSON, SUBJECT_STATS_JSON
+from feature_extractor import get_sliding_windows_indices, window_data
+from feature_extractor.feature_extractor import load_data
+from file_utils import create_dir, remove_file_duplicates
+from raw_data_processor import pre_process_inertial_data, slerp_smoothing
+
+# ------------------------------------------------------------------------------------------------------------------- #
+# constants
+# ------------------------------------------------------------------------------------------------------------------- #
+SENSOR_MEAN = "sensor_mean"
+SENSOR_VAR = "sensor_var"
+SENSOR_MIN = "sensor_min"
+SENSOR_MAX = "sensor_max"
+N_SAMPLES = "n_samples"
+GLOBAL_STATS = "G000"
+
+# ------------------------------------------------------------------------------------------------------------------- #
+# public functions
+# ------------------------------------------------------------------------------------------------------------------- #
+def generate_dataset(data_path: str, output_path: str, activities: List[str] = None, fs: int = 100, window_size: float = 1.5,
+                     overlap: float = 0.5, default_input_file_type: str = NPY) -> None:
+    """
+    Generates the dataset for deep learning model training based on the segmented data stored in data_path.
+    The generated dataset consists of windowed data. For each subject N windows are extracted for each activity segment.
+    The generated dataset is stored as '.npy' files. To distinguish the generated files the naming convention for the
+    files is:
+    <SUBJECT>_<ACTIVITY LABEL>_<N>, where
+    SUBJECT: The subject number (e.g., P001),
+    ACTIVITY LABEL: the activity label (e.g., 1)
+    N: The window number (e.g., 201)
+
+    :param data_path: the path to the data. This should point to the folder containing the segmented tasks.
+    :param output_path: the path to where the dataset should be stored. Within this path a folder called
+                        'HAR_deep_learning_data' is generated.
+    :param activities: list containing the activities that should be considered for dataset generation. Default: None
+                       (in this case all activities are loaded).
+    :param fs: the sampling rate (in Hz) of the data. Default: 100
+    :param window_size: the window size in seconds that should be used for windowing the data. Default: 1.5
+    :param overlap: the overlap between consecutive windows. The value has to be between [0, 1]. Default: 0.5
+    :param default_input_file_type: The default input type that should be used. This is used to make sure that only one
+                                    file is loaded in case the activity data has been stored as both '.npy' and '.csv'.
+                                    It can be either '.csv' or '.npy'. Default: '.npy'
+    :return: None
+    """
+
+    # check if there were no activities passed
+    if activities is None:
+        activities = VALID_ACTIVITIES
+
+    # check validity of provided activities
+    # TODO: generate utils.py or add to file_utils.py
+    activities = _validate_activity_input(activities)
+
+
+    # list all subject folders
+    subject_folders = os.listdir(data_path)
+
+    # get the folders that contain the subject data. Subject data folders start with 'P' (e.g., P001)
+    subject_folders = [folder for folder in subject_folders if folder.startswith('P')]
+
+    # generate output path (folder) where all the data is stored
+    output_path = _generate_outfolder(output_path, int(window_size * fs))
+
+    # dictionary for holding the statistics for each subject
+    subject_stats = {}
+
+    # dictionary for holding the class instances for each subject
+    subject_class_instances = {}
+
+    # cycle over the subjects
+    for subject in subject_folders:
+        print("\n#----------------------------------------------------------------------#")
+        print(f"# Extracting features for Subject {subject}")
+
+        # get the path to the subject folder
+        subject_folder_path = os.path.join(data_path, subject)
+
+        # list all files in the path
+        files = os.listdir(subject_folder_path)
+
+        # remove file duplicates
+        # (e.g., 'walk_slow.npy' and walk_slow.csv'  --> keep only the file that has the default input type)
+        files = remove_file_duplicates(files, default_input_file_type=default_input_file_type)
+
+        # remove all activities that were not chosen
+        files = [file for file in files if any(activity in file for activity in activities)]
+
+        # inform user
+        print(f"The following files are going to be read: {files}")
+
+        # obtain the unique file names (by sub-activity)
+        sub_activities = ['_'.join(os.path.splitext(file)[0].split('_')[:2]) for file in files]
+
+        # get the unique sub_activities
+        sub_activities = list(dict.fromkeys(sub_activities))
+
+        # init dict for holding class instances of the current subject
+        class_instances = dict.fromkeys(MAIN_ACTIVITY_LABELS + SUB_ACTIVITIES_STAND_LABELS + SUB_ACTIVITIES_WALK_LABELS, 0)
+
+        # list to hold the subject data for calculation of subject-wise statistics
+        subject_data = []
+
+        # cycle over the sub-activities
+        for num, main_sub_activity in enumerate(sub_activities, start=1):
+
+            print(f"\n#({num}) {main_sub_activity}:")
+
+            # get the files corresponding to the sub-activity
+            sub_files = [file for file in files if main_sub_activity in file]
+
+            # get the number of files
+            num_files = len(sub_files)
+
+            # initialize window tracker
+            num_extracted_windows = 0
+
+            # get the main and sub_activity
+            main_class, sub_class = _get_labels(main_sub_activity)
+
+            # cycle over the files
+            for file_num, file in enumerate(sub_files, start=1):
+
+                # (1) load the data
+                # TODO add to file_utils.py or pipeline file
+                print(f"({file_num}.1) loading file {file_num}/{num_files}: {file}")
+                data, sensor_names = load_data(os.path.join(subject_folder_path, file))
+
+                # remove time column
+                data = data[:, 1:]
+
+                # (2) pre-process the data
+                # TODO: create some agnostic pipeline file that does the entire pre-processing
+                print(f"({file_num}.2) pre-processing")
+                data = _pre_process_sensors(data, sensor_names)
+
+                # remove impulse response
+                data = data[250:, :]
+
+                # (3) add pre-processed data to list for calculating subject statistics later on
+                subject_data.append(data)
+
+                # (4) window the data
+                # (since all are of the same length it is possible to use just one sensor channel)
+                print(f"({file_num}.3) windowing data")
+                indices = get_sliding_windows_indices(data[:, 0], fs=fs, window_size=window_size, overlap=overlap)
+                windowed_data = window_data(data, indices)
+
+                # get the number of windos
+                num_windows = windowed_data.shape[0]
+                print(f"num_windows: {num_windows}")
+
+                # estimate '00' padding for file name (if-else: file_num > 1: estimate | else: just get the true length of the windows)
+                if num_files > 1:
+
+                    # only do the estimate once
+                    if file_num == 1:
+
+                        # estimate zero padding
+                        num_windows_estimate = num_windows * num_files
+
+                        print(f"estimated number of windows: {num_windows_estimate}")
+                        zeros_pad = len(str(num_windows_estimate  - 1))
+
+                else:
+
+                    zeros_pad = len(str(num_windows -1))
+
+                # store the windows
+                _save_windowed_data(windowed_data, output_path, subject, main_sub_activity, zeros_pad, num_extracted_windows)
+
+                # update the window tracker
+                num_extracted_windows += num_windows
+
+            # update the class instances
+            class_instances[main_class] += num_extracted_windows
+            class_instances[sub_class] = num_extracted_windows
+            subject_class_instances[subject] = class_instances
+
+            # inform user on how many windows were extracted
+            print(f"--> extracted windows {num_extracted_windows}")
+
+        # calculate subject sensor statistics and add them to the dict for holding all subject statistics
+        subject_stats.update(_calc_subject_stats(subject_data, subject_id=subject))
+
+    # calculate global statistics
+    _calc_global_stats(subject_stats)
+
+    # save the dictionaries into json files
+    save_json_file(subject_class_instances, CLASS_INSTANCES_JSON, output_path)
+    save_json_file(subject_stats, SUBJECT_STATS_JSON, output_path)
+
+    print("finished DL dataset generation")
+
+
+# ------------------------------------------------------------------------------------------------------------------- #
+# private functions
+# ------------------------------------------------------------------------------------------------------------------- #
+
+# TODO: add to file_utils.py
+def save_json_file(json_dict: Dict[Any, Any], file_name: str, folder_path: str) -> None:
+    """
+    Stores a dict into a json file
+    :param json_dict: dictionary for storing into json file
+    :param file_name: name of the json file
+    :param folder_path: path to where the file should be stored
+    :return: None
+    """
+
+    with open(os.path.join(folder_path, file_name), "w") as json_file:
+
+        json.dump(json_dict, json_file)
+
+
+def _validate_activity_input(activities: List[str]) -> List[str]:
+    """
+    Checks whether the provided activities are valid.
+    :param activities: list of string containing the activities
+    :return:
+    """
+
+    # check validity of provided activities
+    invalid_activities = [chosen_activity for chosen_activity in activities if chosen_activity not in VALID_ACTIVITIES]
+
+    # remove invalid activities
+    if invalid_activities:
+
+        print(f"-->The following provided activities are not valid: {invalid_activities}"
+              "\n-->These activities are not considered for feature extraction")
+
+        # filter out invalid activities
+        activities = [valid_activity for valid_activity in activities if valid_activity in VALID_ACTIVITIES]
+
+        # only provided non-valid activity strings
+        if not activities:
+            raise ValueError(
+                f"None of the provided activities is supported. Please chose from the following: {VALID_ACTIVITIES}")
+
+    return activities
+
+
+def _generate_outfolder(features_data_path: str,  window_size_samples: float) -> str:
+    """
+    Generates the folders for storing the data
+    :param features_data_path: data path to where the data should be stored
+    :param window_scaler: the window scaler
+    :param window_size_samples: the window size in samples
+    :return: the output folder name
+    """
+
+    # generate folder name
+    folder_name = f"w_{window_size_samples}"
+
+    output_path = create_dir(features_data_path, os.path.join('DL_dataset', folder_name))
+
+    return output_path
+
+
+def _pre_process_sensors(data_array: np.array, sensor_names: List[str], fs=100) -> np.array:
+    """
+    Pre-processes the sensors contained in data_array according to their sensor type.
+    :param data_array: the loaded data
+    :param sensor_names: the names of the sensors contained in the data array
+    :return:
+    """
+
+    # make a copy to not override the original data
+    processed_data = data_array.copy()
+
+    # process each sensor
+    for valid_sensor in VALID_SENSORS:
+
+        # get the positions of the sensor in the sensor_names
+        sensor_cols = [col for col, sensor_name in enumerate(sensor_names) if valid_sensor in sensor_name]
+
+        if sensor_cols:
+
+            print(f"--> pre-processing {valid_sensor} sensor")
+            # acc pre-processing
+            if valid_sensor == ACC:
+
+                processed_data[:, sensor_cols] = pre_process_inertial_data(processed_data[:, sensor_cols], is_acc=True,
+                                                                           fs=fs)
+
+            # gyr and mag pre-processing
+            elif valid_sensor in [GYR, MAG]:
+
+                processed_data[:, sensor_cols] = pre_process_inertial_data(processed_data[:, sensor_cols], is_acc=False,
+                                                                           fs=fs)
+
+            # rotation vector pre-processing
+            else:
+
+                processed_data[:, sensor_cols] = slerp_smoothing(processed_data[:, sensor_cols], 0.3,
+                                                                 scalar_first=False,
+                                                                 return_numpy=True, return_scalar_first=False)
+        else:
+
+            print(f"The {valid_sensor} sensor is not in the loaded data. Skipping the pre-processing of this sensor.")
+
+    return processed_data
+
+
+def _save_windowed_data(windowed_data: np.array, output_path: str, subject: str, label: str, zeros_pad, num_extraced_windows) -> None:
+    """
+    Saves the windowed data into individual .npy files using the window number in the naming of the file.
+    Files use the naming convention <SUBJECT>_<LABEL>_<WINDOW_NUM>
+    :param windowed_data:
+    :param subject:
+    :param label:
+    :return:
+    """
+
+    # cycle over the windows
+    for num, window in enumerate(windowed_data, start=1):
+
+        # create file name
+        filename = f"{subject}_{label}_{num + num_extraced_windows:0{zeros_pad}d}.npy"
+
+        # save the data
+        np.save(os.path.join(output_path, filename), window)
+
+
+def _calc_subject_stats(subject_data: List[np.array], subject_id: str) -> Dict[str, Union[int, List[int]]]:
+    """
+    Calculates a set of statistics from the data contained in subject_data. subject_data is assumed to be a 2D array
+    containing the data of a sensor-axis (e.g., x_ACC, y_GYR, etc.) in each column. The statistics are calculated for
+    each sensor-axis. The following statistics are calculated
+    (1) mean | shape: [num_sensors, ]
+    (2) variance | shape: [num_sensors, ]
+    (3) minimum | shape: [num_sensors, ]
+    (4) maximum | shape: [num_sensors, ]
+    (5) number of samples (calculated over the entire data) | shape: 1 (int)
+    :param subject_data: List of numpy.arrays containing all the data of one activity
+    :param subject_id: ID of the subject (e.g., "P001")
+    :return: nested dictionary where the main key is the subject_id and the sub-dictionary contains the extracted measures
+    """
+
+    # concatenate all data
+    subject_data = np.vstack(subject_data)
+
+    # mean and std for each sensor
+    subject_means = np.mean(subject_data, axis=0).tolist()
+    subject_vars = np.var(subject_data, axis=0).tolist()
+
+    # min-max for each sensor
+    subject_mins = np.min(subject_data, axis=0).tolist()
+    subject_maxs = np.max(subject_data, axis=0).tolist()
+
+    # total number of samples (over all data)
+    print(np.shape(subject_data))
+    sub_samples = subject_data.shape[0]
+
+    return {subject_id: {N_SAMPLES: sub_samples, SENSOR_MEAN: subject_means,
+                         SENSOR_VAR: subject_vars, SENSOR_MIN: subject_mins, SENSOR_MAX: subject_maxs}}
+
+
+# TODO update function doc
+def _get_labels(main_sub_activity_str: str) -> Tuple[str, str]:
+    """
+    Gets the labels for the main and sub-activity corresponding to the file name. The file name encodes the main and
+    sub-activity. (e.g., sitting_sit, cabinets_folders, stairs_down)
+    :param main_sub_activity_str: the name of the file.
+    :return: pandas.DataFrame containing the labels.
+    """
+
+    print("--> getting labels from file name")
+    # get main and sub-activity
+    main_activity, sub_activity = main_sub_activity_str.split('_')[:2]
+
+    # get corresponding main and subclasses
+    main_class = ACTIVITY_MAIN_SUB_CLASS[main_activity][MAIN_CLASS_KEY]
+    sub_class = ACTIVITY_MAIN_SUB_CLASS[main_activity][sub_activity]
+
+    print(f'--> main activity: {main_activity} | class: {main_class}'
+          f'\n--> sub-activity: {sub_activity} | class: {sub_class}')
+
+    return main_class, sub_class
+
+
+def _calc_global_stats(subject_stats_dict: Dict[str, Dict[str, Union[int, List[int]]]]) -> None:
+    """
+    calculates global statistics (over all subjects). The following global stats are calculated
+    (1) global mean
+    (2) global variance: the global variance is based on the combined/pooled variance formula. See: https://en.wikipedia.org/wiki/Pooled_variance
+    (3) global min
+    (4) global max
+    After calculation, the global stats are added to the subject_stats_dict using the "G000".
+    :param subject_stats_dict: nested dictionary containing subject-wise sensor statistics
+    :return: None
+    """
+
+    # collect the sensor stats into arrays of size [n_subjects, n_sensor_columns]
+    sensor_means = np.array([subject_dict[SENSOR_MEAN] for subject_dict in subject_stats_dict.values()])
+    sensor_vars = np.array([subject_dict[SENSOR_VAR] for subject_dict in subject_stats_dict.values()])
+    sensor_min = np.array([subject_dict[SENSOR_MIN] for subject_dict in subject_stats_dict.values()])
+    sensor_max = np.array([subject_dict[SENSOR_MAX] for subject_dict in subject_stats_dict.values()])
+    n_samples = np.array([subject_dict[N_SAMPLES] for subject_dict in subject_stats_dict.values()]).reshape(-1, 1)
+
+    # calculate global N and mean
+    global_n = np.sum(n_samples, axis=0).item()
+    global_mean = np.sum((n_samples * sensor_means), axis=0) / global_n
+
+    # calculate sum[(n_i - 1) * var_i]
+    within_group_ss = np.sum((n_samples - 1) * sensor_vars, axis=0)
+
+    # calculate sum[n_i * (mu_i - mu_g)]
+    between_group_ss = np.sum(n_samples * np.square((sensor_means - global_mean)), axis=0)
+
+    # calculate combined variance
+    global_var = 1 / (global_n - 1) * (within_group_ss + between_group_ss)
+
+    # calculate global min and max
+    global_min = np.min(sensor_min, axis=0)
+    global_max = np.max(sensor_max, axis=0)
+
+    # add the calculated statistics to the subject stats dict
+    subject_stats_dict[GLOBAL_STATS] = {N_SAMPLES: global_n, SENSOR_MEAN: global_mean.tolist(), SENSOR_VAR: global_var.tolist(),
+                                  SENSOR_MIN: global_min.tolist(), SENSOR_MAX: global_max.tolist()}
+
+
+
