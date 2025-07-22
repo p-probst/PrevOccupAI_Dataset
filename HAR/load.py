@@ -5,6 +5,8 @@ Available Functions
 -------------------
 [Public]
 load_features(...): loads the extracted features from all the subjects.
+load_labels_from_log(...): loads the labels from a txt file and generates a label vector
+load_production_model(...): Loads the pre-trained model
 ------------------
 [Private]
 _get_feature_names_and_instances(...): Extracts feature names and determines the number of instances per sub-class based on the selected balancing strategy.
@@ -21,8 +23,10 @@ _balance_subject_data(...): Balances the subject's feature data by selecting the
 import os
 import numpy as np
 import pandas as pd
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 from tqdm import tqdm
+import joblib
+from sklearn.ensemble import RandomForestClassifier
 
 # internal imports
 from constants import CLASS_INSTANCES_JSON, FEATURE_COLS_KEY, SUB_ACTIVITIES_WALK_LABELS, SUB_ACTIVITIES_STAND_LABELS, \
@@ -134,6 +138,87 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
 
     return loaded_features, main_class_labels, sub_class_labels, pd.Series(loaded_subject_ids)
 
+
+def load_labels_from_log(filepath: str, label_mapping: Dict[str, int], num_samples_recording: int, fs: int = 100) -> List[int]:
+    """
+    Creates a label vector from a log file containing activity timestamps.
+
+    :param filepath: Path to the log file. Each line should follow the format: "hh:mm:ss.ms; activity".
+    :param label_mapping: A dictionary mapping activity strings to numeric labels.
+                          e.g., {"sitting": 1, "standing": 2, "walking": 3}.
+    :param num_samples_recording: The number of samples in the recording
+    :param fs: Sampling rate in Hz (default is 100).
+    :returns: A list of integers representing the label vector.
+    """
+    # Load log file into a DataFrame
+    df = pd.read_csv(
+        filepath,
+        sep=';',
+        header=None,
+        names=['timestamp', 'activity']
+    )
+
+    # Convert timestamp to datetime
+    df['timestamp'] = pd.to_datetime(df['timestamp'].str.strip(), format='%H:%M:%S.%f')
+    df['activity'] = df['activity'].str.strip()
+
+    label_vector = []
+
+    # Iterate through consecutive rows
+    for i in range(len(df) - 1):
+        start_time = df.iloc[i]['timestamp']
+        end_time = df.iloc[i + 1]['timestamp']
+        activity = df.iloc[i]['activity']
+
+        # Duration in seconds
+        duration = (end_time - start_time).total_seconds()
+
+        # Number of samples based on sampling rate
+        num_samples = int(duration) * fs
+
+        # Corresponding numeric label
+        label_value = label_mapping.get(activity)
+
+        if label_value is None:
+            raise ValueError(f"Unknown activity label: {activity}")
+
+        # Append labels for the duration
+        label_vector.extend([label_value] * num_samples)
+
+    # get the last label
+    last_label = label_mapping.get(df.iloc[-1]['activity'])
+
+    # calculate difference between length of label vector and data acquisition
+    # (since the timetamps only account for the beginning of the activity, it is still needed to extend the labels until the end of the recording)
+    num_missing_labels = num_samples_recording - len(label_vector)
+
+    label_vector.extend([last_label] * num_missing_labels)
+
+    return label_vector
+
+
+def load_production_model(model_path: str) -> Tuple[RandomForestClassifier, List[str]]:
+    """
+    Loads the production model
+    :param model_path: path o the model
+    :return: a tuple containing the model and the list of features used
+    """
+    # load the classifier
+    har_model = joblib.load(model_path)
+
+    # print model name
+    print(f"model: {type(har_model).__name__}")
+    print(f"\nhyperparameters: {har_model.get_params()}")
+
+    # print the classes that the model saw during training
+    print(f"\nclasses: {har_model.classes_}")
+
+    # get the features that the model was trained with
+    feature_names = har_model.feature_names_in_
+    print(f"\nnumber of features: {len(feature_names)}")
+    print(f"features: {feature_names}")
+
+    return har_model, feature_names
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions

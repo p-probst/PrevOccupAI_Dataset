@@ -12,6 +12,8 @@ train_production_model(...): Trains the production model by performing a final h
 _evaluate_models(...): Evaluates multiple machine learning models using nested cross-validation.
 _evaluate_production_model(...): Performs a final hyperparameter tuning and performs production model evaluation.
 _save_results(...): Saves the results from the nested cross-validation into a .csv file.
+_test_all_subjects(...) Tests the production model on the data from all test subjects
+_test_individually(...) Tests the production model on each subject individually
 ------------------
 """
 
@@ -22,7 +24,6 @@ import os
 import numpy as np
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay, confusion_matrix
@@ -31,7 +32,6 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.base import ClassifierMixin, BaseEstimator
 
 # internal imports
 from .load import load_features
@@ -185,7 +185,7 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     print(f"Used features: {X_train.columns.values}")
 
     # evaluate production model
-    _tune_and_evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, subject_ids_test, window_size_samples, cv_splits=2)
+    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, subject_ids_test, window_size_samples, cv_splits=2)
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
@@ -236,9 +236,9 @@ def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_trai
                       num_features=len(X_train.columns), norm_type=norm_type, window_size_samples=window_size_samples)
 
 
-def _tune_and_evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
-                                        X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series,
-                                        subject_ids_test: pd.Series, window_size_samples: int, cv_splits: int = 5) -> None:
+def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
+                               X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series,
+                               subject_ids_test: pd.Series, window_size_samples: int, cv_splits: int = 5) -> None:
     """
     Performs a final hyperparameter tuning on the production model that was chosen based on the results from
     evaluate_models(...) and evaluates the model on the test data.
@@ -271,14 +271,14 @@ def _tune_and_evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Serie
     out_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{window_size_samples}_w_size"))
 
     # get train and test accuracy
-    _test_all(model, window_size_samples, X_train, X_test, y_train, y_test, out_path)
+    _test_all_subjects(model, window_size_samples, X_train, X_test, y_train, y_test, out_path)
 
     # test the model on each subject individually
     _test_individually(model, window_size_samples, X_test, y_test, subject_ids_test, out_path)
 
 
-def _test_all(model: RandomForestClassifier, window_size_samples: int, X_train: pd.DataFrame, X_test: pd.DataFrame,
-              y_train: pd.Series, y_test: pd.Series, out_path: str) -> None:
+def _test_all_subjects(model: RandomForestClassifier, window_size_samples: int, X_train: pd.DataFrame, X_test: pd.DataFrame,
+                       y_train: pd.Series, y_test: pd.Series, out_path: str) -> None:
     """
     Tests the model (Random Forest) on the data from all subjects in the test set. Generates and saves a confusion matrix
     as well as the model.

@@ -9,6 +9,7 @@ load_data(...): loads the data located at full_file_path.
 extract_tsfel_features(...): Extracts features from the data windows contained in windowed_data using TSFEL.
 extract_quaternion_features(...): Extracts quaterion-based features from the rotation vector sensor.
 load_json_file(...): Loads a json file.
+pre_process_signals(...): Preprocesses the sensor data and label vector
 ------------------
 [Private]
 _validate_activity_input(...): Checks whether the provided activities are valid.
@@ -18,6 +19,7 @@ _pre_process_sensors(...): Pre-processes the sensors contained in data_array acc
 _extract_features(...): Extracts features from the windowed data.
 _get_labels(...): Gets the labels for the main and sub-activity corresponding to the file name.
 _save_subject_features(...): Saves the features extracted for a subject.
+_pre_process_sensors(...): Pre-processes the sensors contained in data_array according to their sensor type.
 ------------------
 """
 
@@ -27,7 +29,7 @@ _save_subject_features(...): Saves the features extracted for a subject.
 import os
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from tqdm import tqdm
 import json
 import tsfel
@@ -40,7 +42,7 @@ from constants import VALID_ACTIVITIES, \
     SENSOR_COLS_JSON, LOADED_SENSORS_KEY, CLASS_INSTANCES_JSON, MAIN_LABEL_KEY, SUB_LABEL_KEY,\
     ACTIVITY_MAIN_SUB_CLASS, MAIN_CLASS_KEY
 from raw_data_processor import slerp_smoothing, pre_process_inertial_data
-from .window import get_sliding_windows_indices, window_data, window_scaling, validate_scaler_input
+from .window import get_sliding_windows_indices, window_data, window_scaling, validate_scaler_input, trim_data
 from .quaternion_features import geodesic_distance
 from file_utils import remove_file_duplicates, create_dir, load_json_file
 
@@ -315,6 +317,39 @@ def extract_quaternion_features(quat_windowed_data) -> pd.DataFrame:
     return pd.DataFrame(quat_features, columns=["quat_mean_dist", "quat_std_dist", "quat_total_dist"])
 
 
+def pre_process_signals(subject_data: pd.DataFrame, sensor_names: List[str], w_size: float,
+                         fs: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Pre-processes the sensors contained in data_array according to their sensor type. Removes samples from the
+    impulse response of the filters and trims the data and label vector to accommodate full windowing of the data.
+
+    :param subject_data: pandas.DataFrame containing the sensor data
+    :param sensor_names: list of strings correspondent to the sensor names
+    :param w_size: window size in seconds
+    :param fs: the sampling frequency
+    :return: the processed sensor data and label vector
+    """
+
+    # convert data to numpy array
+    sensor_data = subject_data.values[:,1:-1]
+
+    # get the label vector
+    labels = subject_data.values[:, -1]
+
+    # pre-process the data
+    sensor_data = _pre_process_sensors(sensor_data, sensor_names)
+
+    # remove impulse response
+    sensor_data = sensor_data[250:,:]
+    labels = labels[250:]
+
+    # trim the data to accommodate full windowing
+    sensor_data, to_trim = trim_data(sensor_data, w_size=w_size, fs=fs)
+    labels = labels[:-to_trim]
+
+    return sensor_data, labels
+
+
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -389,51 +424,6 @@ def _load_sensor_names(data_file_path: str) -> List[str]:
     sensor_names = json_header[LOADED_SENSORS_KEY]
 
     return sensor_names
-
-
-def _pre_process_sensors(data_array: np.array, sensor_names: List[str], fs=100) -> np.array:
-    """
-    Pre-processes the sensors contained in data_array according to their sensor type.
-    :param data_array: the loaded data
-    :param sensor_names: the names of the sensors contained in the data array
-    :return:
-    """
-
-    # make a copy to not override the original data
-    processed_data = data_array.copy()
-
-    # process each sensor
-    for valid_sensor in VALID_SENSORS:
-
-        # get the positions of the sensor in the sensor_names
-        sensor_cols = [col for col, sensor_name in enumerate(sensor_names) if valid_sensor in sensor_name]
-
-        if sensor_cols:
-
-            print(f"--> pre-processing {valid_sensor} sensor")
-            # acc pre-processing
-            if valid_sensor == ACC:
-
-                processed_data[:, sensor_cols] = pre_process_inertial_data(processed_data[:, sensor_cols], is_acc=True,
-                                                                           fs=fs)
-
-            # gyr and mag pre-processing
-            elif valid_sensor in [GYR, MAG]:
-
-                processed_data[:, sensor_cols] = pre_process_inertial_data(processed_data[:, sensor_cols], is_acc=False,
-                                                                           fs=fs)
-
-            # rotation vector pre-processing
-            else:
-
-                processed_data[:, sensor_cols] = slerp_smoothing(processed_data[:, sensor_cols], 0.3,
-                                                                 scalar_first=False,
-                                                                 return_numpy=True, return_scalar_first=False)
-        else:
-
-            print(f"The {valid_sensor} sensor is not in the loaded data. Skipping the pre-processing of this sensor.")
-
-    return processed_data
 
 
 def _extract_features(windowed_data: np.array, sensor_names: List[str],
@@ -512,6 +502,51 @@ def _save_subject_features(subject_feature_df: pd.DataFrame(), subject_num: str,
 
         # as npy file
         np.save(file_path, subject_feature_df.values)
+
+
+def _pre_process_sensors(data_array: np.array, sensor_names: List[str], fs=100) -> np.array:
+    """
+    Pre-processes the sensors contained in data_array according to their sensor type.
+    :param data_array: the loaded data
+    :param sensor_names: the names of the sensors contained in the data array
+    :return:
+    """
+
+    # make a copy to not override the original data
+    processed_data = data_array.copy()
+
+    # process each sensor
+    for valid_sensor in VALID_SENSORS:
+
+        # get the positions of the sensor in the sensor_names
+        sensor_cols = [col for col, sensor_name in enumerate(sensor_names) if valid_sensor in sensor_name]
+
+        if sensor_cols:
+
+            print(f"--> pre-processing {valid_sensor} sensor")
+            # acc pre-processing
+            if valid_sensor == ACC:
+
+                processed_data[:, sensor_cols] = pre_process_inertial_data(processed_data[:, sensor_cols], is_acc=True,
+                                                                           fs=fs)
+
+            # gyr and mag pre-processing
+            elif valid_sensor in [GYR, MAG]:
+
+                processed_data[:, sensor_cols] = pre_process_inertial_data(processed_data[:, sensor_cols], is_acc=False,
+                                                                           fs=fs)
+
+            # rotation vector pre-processing
+            else:
+
+                processed_data[:, sensor_cols] = slerp_smoothing(processed_data[:, sensor_cols], 0.3,
+                                                                 scalar_first=False,
+                                                                 return_numpy=True, return_scalar_first=False)
+        else:
+
+            print(f"The {valid_sensor} sensor is not in the loaded data. Skipping the pre-processing of this sensor.")
+
+    return processed_data
 
 
 
