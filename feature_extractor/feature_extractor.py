@@ -8,15 +8,13 @@ extract_features(...): Extracts features for all subjects and activities.
 load_data(...): loads the data located at full_file_path.
 extract_tsfel_features(...): Extracts features from the data windows contained in windowed_data using TSFEL.
 extract_quaternion_features(...): Extracts quaterion-based features from the rotation vector sensor.
-load_json_file(...): Loads a json file.
 ------------------
 [Private]
-_validate_activity_input(...): Checks whether the provided activities are valid.
 _generate_outfolder(...): Generates the folders for storing the data.
 _load_sensor_names(...): Loads the sensor names from a json file containing it.
 _pre_process_sensors(...): Pre-processes the sensors contained in data_array according to their sensor type.
 _extract_features(...): Extracts features from the windowed data.
-_get_labels(...): Gets the labels for the main and sub-activity corresponding to the file name.
+_generate_labels(...): Gets the labels for the main and sub-activity corresponding to the file name.
 _save_subject_features(...): Saves the features extracted for a subject.
 ------------------
 """
@@ -42,7 +40,8 @@ from constants import VALID_ACTIVITIES, \
 from raw_data_processor import slerp_smoothing, pre_process_inertial_data
 from .window import get_sliding_windows_indices, window_data, window_scaling, validate_scaler_input
 from .quaternion_features import geodesic_distance
-from file_utils import remove_file_duplicates, create_dir, load_json_file
+from file_utils import (remove_file_duplicates, create_dir, load_json_file, save_json_file, validate_activity_input,
+                        get_labels)
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -94,7 +93,7 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
         activities = VALID_ACTIVITIES
 
     # check validity of provided activities
-    activities = _validate_activity_input(activities)
+    activities = validate_activity_input(activities)
 
     # check validity of the provided scaler if not None
     if window_scaler:
@@ -191,7 +190,7 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
                     features_df = _extract_features(windowed_data, sensor_names, features_dict, fs=fs)
 
                     # get labels
-                    labels_df = _get_labels(file, windowed_data.shape[0])
+                    labels_df = _generate_labels(file, windowed_data.shape[0])
 
                     # concatenate the features and the labels
                     features_df = pd.concat([features_df, labels_df], axis=1)
@@ -225,11 +224,9 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
         print('saving subject data')
         _save_subject_features(subject_features, subject, output_path, file_type=output_file_type)
 
-    print("finished feature extraction")
     # save the json_dict
-    with open(os.path.join(output_path, CLASS_INSTANCES_JSON), "w") as json_file:
-
-        json.dump(json_dict, json_file)
+    save_json_file(json_dict, CLASS_INSTANCES_JSON, output_path)
+    print("finished feature extraction")
 
 
 def load_data(full_file_path: str) -> np.array:
@@ -319,33 +316,6 @@ def extract_quaternion_features(quat_windowed_data) -> pd.DataFrame:
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def _validate_activity_input(activities: List[str]) -> List[str]:
-    """
-    Checks whether the provided activities are valid.
-    :param activities: list of string containing the activities
-    :return:
-    """
-
-    # check validity of provided activities
-    invalid_activities = [chosen_activity for chosen_activity in activities if chosen_activity not in VALID_ACTIVITIES]
-
-    # remove invalid activities
-    if invalid_activities:
-
-        print(f"-->The following provided activities are not valid: {invalid_activities}"
-              "\n-->These activities are not considered for feature extraction")
-
-        # filter out invalid activities
-        activities = [valid_activity for valid_activity in activities if valid_activity in VALID_ACTIVITIES]
-
-        # only provided non-valid activity strings
-        if not activities:
-            raise ValueError(
-                f"None of the provided activities is supported. Please chose from the following: {VALID_ACTIVITIES}")
-
-    return activities
-
-
 def _generate_outfolder(features_data_path: str, window_scaler: str, window_size_samples: float) -> str:
     """
     Generates the folders for storing the data
@@ -467,7 +437,7 @@ def _extract_features(windowed_data: np.array, sensor_names: List[str],
     return features_df
 
 
-def _get_labels(file_name: str, num_windows: int) -> pd.DataFrame():
+def _generate_labels(file_name: str, num_windows: int) -> pd.DataFrame():
     """
     Gets the labels for the main and sub-activity corresponding to the file name. The file name encodes the main and
     sub-activity.
@@ -477,15 +447,11 @@ def _get_labels(file_name: str, num_windows: int) -> pd.DataFrame():
     """
 
     print("--> getting labels from file name")
-    # get main and sub-activity
-    main_activity, sub_activity = os.path.splitext(file_name)[0].split('_')[:2]
+    # split off the file extension
+    main_sub_activity = os.path.splitext(file_name)[0]
 
     # get corresponding main and subclasses
-    main_class = ACTIVITY_MAIN_SUB_CLASS[main_activity][MAIN_CLASS_KEY]
-    sub_class = ACTIVITY_MAIN_SUB_CLASS[main_activity][sub_activity]
-
-    print(f'--> main activity: {main_activity} | class: {main_class}'
-          f'\n--> sub-activity: {sub_activity} | class: {sub_class}')
+    main_class, sub_class = get_labels(main_sub_activity)
 
     # generate the DataFrame
     label_data = np.tile(np.array([main_class, sub_class]), (num_windows, 1))
