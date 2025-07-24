@@ -105,8 +105,8 @@ def get_labels(main_sub_activity_str: str) -> Tuple[str, str]:
     """
     Gets the labels for the main and sub-activity string contained in the file name. The string encodes the main and
     sub-activity as {main_activity}_{sub_activity} (e.g., sitting_sit, cabinets_folders, stairs_down).
-    :param main_sub_activity_str: the filename without its file type endig (e.g, .py)
-    :return: pandas.DataFrame containing the labels.
+    :param main_sub_activity_str: the filename without its file type ending (e.g, .py)
+    :return: tuple containing the corresponding main and sub-class labels as integers
     """
 
     print("--> getting labels from file name")

@@ -22,21 +22,26 @@ _calc_global_stats(...): Calculates global statistics (over all subjects).
 # ------------------------------------------------------------------------------------------------------------------- #
 # imports
 # ------------------------------------------------------------------------------------------------------------------- #
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Optional, Literal, Tuple
 import os
 import numpy as np
+import torch
+from torch.utils.data import Dataset
 
 # internal imports
 from constants import NPY, VALID_ACTIVITIES, VALID_SENSORS, ACC, GYR, MAG, MAIN_ACTIVITY_LABELS, \
     SUB_ACTIVITIES_STAND_LABELS, SUB_ACTIVITIES_WALK_LABELS, CLASS_INSTANCES_JSON, SUBJECT_STATS_JSON
 from feature_extractor import get_sliding_windows_indices, window_data
 from feature_extractor.feature_extractor import load_data
-from file_utils import create_dir, remove_file_duplicates, save_json_file, get_labels, validate_activity_input
+from file_utils import create_dir, remove_file_duplicates, save_json_file, get_labels, validate_activity_input, \
+    load_json_file
 from raw_data_processor import pre_process_inertial_data, slerp_smoothing
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # constants
 # ------------------------------------------------------------------------------------------------------------------- #
+
+# dictionary keys
 SENSOR_MEAN = "sensor_mean"
 SENSOR_VAR = "sensor_var"
 SENSOR_MIN = "sensor_min"
@@ -44,9 +49,241 @@ SENSOR_MAX = "sensor_max"
 N_SAMPLES = "n_samples"
 GLOBAL_STATS = "G000"
 
+# norm methods
+Z_SCORE = "z-score"
+MIN_MAX = "min-max"
+NORM_METHODS = [Z_SCORE, MIN_MAX]
+
+# norm types
+WINDOW_NORM = "window"
+SUBJECT_NORM = "subject"
+GLOBAL_NORM = "global"
+NORM_TYPES = [WINDOW_NORM, SUBJECT_NORM, GLOBAL_NORM]
+
+# self-defined typing hints
+NormalizationType = Optional[Literal[WINDOW_NORM, SUBJECT_NORM, GLOBAL_NORM]]
+NormMethod = Optional[Literal[Z_SCORE, MIN_MAX]]
+
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
+class HARDataset(Dataset):
+    """
+    Pytorch Dataset for the deep learning HAR dataset. In this dataset each window is stored individually as a .npy file.
+    The file name is encoded in the following way:
+    <SUBJECT_ID>_<MAIN_ACTIVITY_LABEL>_<SUB_ACTIVITY_LABEL>_<WINDOW_NUM>.npy
+    e.g., P001_walk_slow_021.npy
+
+    The HARDatasets handles label retrieval and normalization for each window according to the provided normalization type.
+
+    :param data_path: the path to the dataset
+    :param subject_ids: the IDs of the subject for which the data should be loaded
+    :param norm_method: the normalization method. The following are available:
+                        "z-score": uses z-score normalization
+                        "min-max": uses min-max normalization
+    :param norm_type: the normalization type. The following are available
+                      "window": each data sample is normalized using its own statistics
+                      "subject": each data sample is normalized using the corresponding subject's statistics
+                      "global": each data sample is normalized using global statistics calculated over the entire dataset
+                      None (default): no normalization applied
+    """
+
+    def __init__(self, data_path: str, subject_ids: List[str],
+                 norm_method: NormMethod = None, norm_type: NormalizationType = None):
+
+        # input validation
+        # (1) check path
+        if not os.path.isdir(data_path):
+            raise ValueError("The data path you provided is not valid."
+                             f"\nProvided data path: {data_path}")
+
+        # (2) check subject_ids
+        # collect all available subject IDs in the dataset folder
+        available_subjects = {file_name.split("_")[0] for file_name in os.listdir(data_path) if
+                              file_name.endswith(".npy")}
+
+        # check if there are any subjects chosen by the user that are not in the dataset
+        unknown_subjects = set(subject_ids) - available_subjects
+
+        if len(unknown_subjects) == len(subject_ids):
+            raise ValueError("The provided subject IDs were not found in the dataset."
+                             f"\nPlease choose from the following subject IDs are in the dataset: {sorted(available_subjects)}."
+                             f"\nProvided subject_ids: {subject_ids}")
+        else:
+            print(f"[WARNING]: The following subjects were not found in the dataset: {list(unknown_subjects)}"
+                  "\nThese subjects are going to be ignored for model training/testing")
+
+        # (3) check norm_method
+        # (a) norm_method provided but no norm_type
+        if norm_method and not norm_type:
+            raise ValueError(f"norm_method was provided ({norm_method}), but no norm_type was given. "
+                             f"Please provide one of: {NORM_TYPES}.")
+
+        # (b) norm_type provided but no norm_method
+        if norm_type and not norm_method:
+            print(f"norm_type was provided ({norm_type}), but no norm_method was specified. "
+                  "Disabling normalization by setting norm_type=None.")
+
+            # set normalization to none
+            norm_type = None
+            norm_method = None
+
+        # (c) check norm_method validity
+        if norm_method and norm_method not in NORM_METHODS:
+            raise ValueError(f"Invalid norm_method: {norm_method}. Must be one of: {NORM_METHODS}.")
+
+        # (c) check norm_type validity
+        if norm_type and norm_type not in NORM_TYPES:
+            raise ValueError(f"Invalid norm_type: {norm_type}. Must be one of: {NORM_TYPES}.")
+
+        # init class variables
+        self.data_path = data_path
+        self.subject_ids = subject_ids
+        self.norm_method = norm_method
+        self.norm_type = norm_type
+        self.stats = {}
+
+        # get files corresponding to the set subject_ids
+        self.files = [file_name for file_name in os.listdir(data_path)
+                      if file_name.endswith(".npy") and file_name.split('_')[0] in subject_ids]
+
+        # load the statistics in case a norm_type was chosen
+        if norm_type in [SUBJECT_NORM, GLOBAL_NORM]:
+
+            # load the json-file containing the statistics
+            self.stats = load_json_file(os.path.join(data_path, SUBJECT_STATS_JSON))
+
+    def __len__(self):
+
+        return len(self.files)
+
+    def _min_max_norm(self, data_sample: np.array, subject_id: str):
+        """
+        Applies min-max normalization using the provided statistics
+        :param data_sample: numpy.array of shape [window_size, num_channels]
+        :param subject_id: ID of the subject to which the data sample belongs to
+        :return: min-max normalized data array of the same shape as the input.
+        """
+
+        # apply window-wise normalization
+        if self.norm_type == WINDOW_NORM:
+
+            # calculate window statistics
+            window_mins = np.min(data_sample, axis=0, keepdims=True)
+            window_maxs = np.min(data_sample, axis=0, keepdims=True)
+
+            return (data_sample - window_mins) / (window_maxs - window_mins)
+
+        # apply subject-wise normalization
+        elif self.norm_type == SUBJECT_NORM:
+
+            # get the statistics of the corresponding subject
+            subject_stats = self.stats.get(subject_id)
+            subject_mins = np.array(subject_stats[SENSOR_MIN])
+            subject_maxs = np.array(subject_stats[SENSOR_MAX])
+
+            return (data_sample - subject_mins) / (subject_maxs - subject_mins)
+
+        # apply population normalization
+        elif self.norm_type == GLOBAL_NORM:
+
+            # get the global/population statistics
+            global_stats = self.stats.get(GLOBAL_STATS)
+            global_mins = np.array(global_stats[SENSOR_MIN])
+            global_maxs = np.array(global_stats[SENSOR_MAX])
+
+            return (data_sample - global_mins) / (global_maxs - global_mins)
+
+
+    def _zero_score_norm(self, data_sample: np.array, subject_id: str):
+        """
+        Applies zero-score normalization using the provided statistics
+        :param data_sample: numpy.array of shape [window_size, num_channels]
+        :param subject_id: ID of the subject to which the data sample belongs to
+        :return: zero-score normalized data array of the same shape as the input.
+        """
+
+        # apply window-wise normalization
+        if self.norm_type == WINDOW_NORM:
+
+            # calculate window statistics
+            window_means = np.mean(data_sample, axis=0, keepdims=True)
+            window_stds = np.std(data_sample, axis=0, keepdims=True)
+
+            return (data_sample - window_means) / window_stds
+
+        # apply subject-wise normalization
+        elif self.norm_type == SUBJECT_NORM:
+
+            # get the statistics of the corresponding subject
+            subject_stats = self.stats.get(subject_id)
+            subject_means = np.array(subject_stats[SENSOR_MEAN])
+            subject_stds = np.array(subject_stats[SENSOR_VAR])
+
+            return (data_sample - subject_means) / subject_stds
+
+        # apply population normalization
+        elif self.norm_type == GLOBAL_NORM:
+
+            # get the global/population statistical
+            global_stats = self.stats.get(GLOBAL_STATS)
+            global_means = np.array(global_stats[SENSOR_MEAN])
+            global_stds = np.array(global_stats[SENSOR_VAR])
+
+            return (data_sample - global_means) / global_stds
+
+    def _normalize_data(self, data_sample: np.array, subject_id: str) -> np.array:
+        """
+        Applies normalization to data sample based on the selected normalization strategy
+        :param data_sample: numpy.array of shape [window_size, num_channels]
+        :param subject_id: ID of the subject to which the data sample belongs to
+        :return: normalized data array of the same shape as the input.
+        """
+
+        if self.norm_type is None:
+            return data_sample
+
+        else:
+
+            # apply z-score normalization
+            if self.norm_method == Z_SCORE:
+
+                return self._zero_score_norm(data_sample, subject_id)
+
+            # apply min-max normalization
+            elif self.norm_method == MIN_MAX:
+
+                return self._min_max_norm(data_sample, subject_id)
+
+    def __getitem__(self, idx) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        loads a data sample and its corresponding main and sub-activity labels.
+        :param idx: index of the file to load
+        :return: Tuple containing:
+                 - torch.FloatTensor of shape [window_size, num_channels]
+                 - torch.LongTensor containing the main activity label (as integer)
+                 - torch.LongTensor containing the sub-activiyt label (as integer)
+        """
+
+        # get the file name
+        file_name = self.files[idx]
+
+        # retrieve the subject_id from the file name
+        subject_id = file_name.split("_")[0]
+
+        # extract the main and sub-activity label
+        main_sub_activity = "_".join(file_name.split("_")[1:3])
+        main_class, sub_class = get_labels(main_sub_activity)
+
+        # load the data
+        data_sample = np.load(os.path.join(self.data_path, file_name))
+
+        # apply normalization
+        data_sample = self._normalize_data(data_sample, subject_id)
+
+        return torch.tensor(data_sample, dtype=torch.float32), torch.tensor(main_class, dtype=torch.long), torch.tensor(sub_class, dtype=torch.long)
+
+
 def generate_dataset(data_path: str, output_path: str, activities: List[str] = None, fs: int = 100, window_size: float = 1.5,
                      overlap: float = 0.5, default_input_file_type: str = NPY) -> None:
     """

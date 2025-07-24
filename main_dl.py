@@ -12,6 +12,7 @@ from DL_HAR import generate_dataset
 GENERATE_DATASET = True
 
 
+
 # definition of folder_path
 OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
 

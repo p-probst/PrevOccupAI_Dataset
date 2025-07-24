@@ -6,3 +6,5 @@ tsfel~=0.1.9
 pyquaternion~=0.9.9
 scipy~=1.15.2
 matplotlib~=3.10.1
+joblib~=1.4.2
+torch~=2.7.1
