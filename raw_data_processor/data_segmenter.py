@@ -36,7 +36,8 @@ from file_utils import create_dir
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
 def generate_segmented_dataset(raw_data_path: str, segmented_data_path: str,
-                               load_sensors: Optional[List[str]] = None, fs: int = 100, crop_n_seconds: int = 5,
+                               load_sensors: Optional[List[str]] = None, fs: int = 1000, # fs from mBAN = 1000 Hz
+                               crop_n_seconds: int = 5,
                                plot_segment_lines: bool = False, plot_cropped_tasks: bool = False,
                                output_file_type: str = NPY) -> None:
     """
@@ -60,7 +61,7 @@ def generate_segmented_dataset(raw_data_path: str, segmented_data_path: str,
     :param segmented_data_path: the path to where the segmented data should be stored. The function generates a folder
                                 named 'segmented_data' in which the data for each subject is stored.
     :param load_sensors: list of sensors (as strings) indicating which sensors should be loaded. Default: None (all sensors are loaded)
-    :param fs: the sampling rate to which all sensors should be re-sampled to. Default: 100 (Hz)
+    :param fs: the sampling rate to which all sensors should be re-sampled to. Default: 1000 (Hz)
     :param crop_n_seconds: the amount of seconds that should be cropped at the beginning and end of each segmented activity.
                            This is used to ensure that any transition between activities are removed. Default: 5 (seconds)
     :param plot_segment_lines: boolean that indicates whether a plot should be shown in which the obtained segmentation
@@ -110,25 +111,79 @@ def generate_segmented_dataset(raw_data_path: str, segmented_data_path: str,
 
             # segment tasks
             print(f"# ({num}.2) task segmentation")
+            
+            # Skip problematic files entirely
+            file_path = os.path.basename(data_folder)
+            if (subject == 'P013' and activity == STAIRS and 'file03' in str(data_folder)) or \
+               (subject == 'P020' and activity == STAND and 'file02' in str(data_folder)):
+                print(f"# Skipping problematic file: {subject}/{activity}")
+                continue
+            
+            # Special parameter tuning for specific subjects/activities
             if subject in ['P012', 'P015', 'P017', 'P020'] and activity in [WALK, STAIRS]:
-
                 # adapt the window size for the envelope
                 segmented_tasks = segment_activities(aligned_data, activity, fs=fs, envelope_param=300,
                                                      plot_segments=plot_segment_lines)
 
             elif subject == 'P009' and activity == CABINETS:
-
                 segmented_tasks = segment_activities(aligned_data, activity, fs=fs, peak_height=0.5,
                                                      plot_segments=plot_segment_lines)
 
             elif subject == 'P019' and activity in [CABINETS, STAND]:
-
                 segmented_tasks = segment_activities(aligned_data, activity, fs=fs, peak_height=0.35,
                                                      peak_dist_seconds=1,
+                                                     plot_segments=plot_segment_lines)
+            
+            # Special handling for subjects with detection issues - use smaller envelope window and lower threshold
+            elif subject in ['P003', 'P006', 'P007', 'P008', 'P010', 'P011', 'P013', 'P019'] and activity in [WALK, STAIRS]:
+                # Lower onset threshold and envelope param for better sensitivity
+                segmented_tasks = segment_activities(aligned_data, activity, fs=fs, 
+                                                     onset_threshold=0.0005, envelope_param=50,
+                                                     min_segment_length_seconds=10,
+                                                     plot_segments=plot_segment_lines)
+            
+            # Extra sensitive for P003 (cut off start issues)
+            elif subject == 'P003' and activity in [WALK, STAIRS]:
+                # Very low threshold for cut-off start issues
+                segmented_tasks = segment_activities(aligned_data, activity, fs=fs, 
+                                                     onset_threshold=0.0003, envelope_param=30,
+                                                     min_segment_length_seconds=8,
+                                                     plot_segments=plot_segment_lines)
+            
+            # Special handling for P002, P004, P007 stairs (should detect 8 segments) - lower threshold for better detection
+            elif subject in ['P002', 'P004', 'P007'] and activity == STAIRS:
+                segmented_tasks = segment_activities(aligned_data, activity, fs=fs, 
+                                                     onset_threshold=0.0007, envelope_param=75,
+                                                     min_segment_length_seconds=10,
                                                      plot_segments=plot_segment_lines)
 
             else:
                 segmented_tasks = segment_activities(aligned_data, activity, fs=fs, plot_segments=plot_segment_lines)
+            
+            # Post-process specific cases
+            if subject == 'P017' and activity == WALK:
+                # Keep only first 3 segments, remove erratic last segment
+                if len(segmented_tasks) > 3:
+                    segmented_tasks = segmented_tasks[:3]
+                    print(f"# Trimmed P017 walking to first 3 segments (removed erratic last segment)")
+            
+            elif subject == 'P020' and activity == WALK:
+                # Keep only first 3 segments
+                if len(segmented_tasks) > 3:
+                    segmented_tasks = segmented_tasks[:3]
+                    print(f"# Trimmed P020 walking to first 3 segments")
+            
+            elif subject == 'P015' and activity == WALK:
+                # Keep only first 3 segments
+                if len(segmented_tasks) > 3:
+                    segmented_tasks = segmented_tasks[:3]
+                    print(f"# Trimmed P015 walking to first 3 segments")
+            
+            elif subject == 'P016' and activity == WALK:
+                # Keep only first 3 segments, remove erratic last segment
+                if len(segmented_tasks) > 3:
+                    segmented_tasks = segmented_tasks[:3]
+                    print(f"# Trimmed P016 walking to first 3 segments (removed erratic last segment)")
 
             # crop 10 seconds at the beginning and the end of each signal to ensure that
             segmented_tasks = crop_segments(segmented_tasks, n_seconds=crop_n_seconds, fs=fs)

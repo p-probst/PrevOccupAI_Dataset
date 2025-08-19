@@ -29,7 +29,9 @@ from tqdm import tqdm
 from typing import List, Tuple, Any, Dict, Optional, Union
 
 # internal imports
-from constants import VALID_SENSORS, SENSOR_MAP, ROT, IMU_SENSORS
+from constants import VALID_SENSORS, SENSOR_MAP, ROT, IMU_SENSORS, \
+    MBAN_MAC_ADDRESS, MBAN_FS, MBAN_NSEQ_COL, MBAN_X_ACC_COL, MBAN_Y_ACC_COL, MBAN_Z_ACC_COL, \
+    MBAN_NSEQ, MBAN_X_ACC, MBAN_Y_ACC, MBAN_Z_ACC
 from .interpolate import cubic_spline_interpolation, slerp_interpolation
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -52,8 +54,8 @@ STOPPING_TIMES = 'stopping times'
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def load_data_from_same_recording(folder_path: str, sensor_names: List[str] = None,
-                                  fs: int = 100, padding_type: str = PADDING_SAME) -> pd.DataFrame:
+def load_data_from_same_recording(folder_path: str, sensor_names: Optional[List[str]] = None,
+                                  fs: int = 1000, padding_type: str = PADDING_SAME) -> pd.DataFrame:
     """
     Function to load Android sensor data from the same recording into a single DataFrame. The function assumes that
     files stored at the provided path belong to the same recording. Alignment (in time) of the files is done based on
@@ -65,7 +67,7 @@ def load_data_from_same_recording(folder_path: str, sensor_names: List[str] = No
     :param sensor_names: list of sensors (as strings) indicating which sensors should be loaded. The following sensors
                          can be loaded: ['ACC', 'GYR', 'MAG', 'ROT']
                          Default: None (all sensors are loaded)
-    :param fs: the sampling rate to which all sensors should be re-sampled to. Default: 100 (Hz)
+    :param fs: the sampling rate to which all sensors should be re-sampled to. Default: 1000 (Hz)
     :param padding_type: padding which should be used to ensure that all sensors start and stop at the same time. The
                          following padding types are supported: 'same', 'zero'. Default: 'same'
     :return: pandas.DataFrame containing all sensors aligned in time and re-sampled to the same sampling rate.
@@ -89,7 +91,7 @@ def load_data_from_same_recording(folder_path: str, sensor_names: List[str] = No
     # (1) pad the data (all sensors start and stop at the same timestep)
     padded_data = _pad_data(sensor_data, report, padding_type)
 
-    # (2) resample the data to 100 Hz
+    # (2) resample the data to 1000 Hz
     interpolated_data = _re_sample_data(padded_data, report, fs=fs)
 
     # (3) create a DataFrame containing all the data
@@ -149,7 +151,7 @@ def _load_raw_data(folder_path: str, sensor_names: List[str]) -> Tuple[List[pd.D
 
     try:
         # list the files in folder_path
-        files = os.listdir(folder_path)
+        files = os.listdir(folder_path) 
     except FileNotFoundError:
 
         # raise error in case the folder path is invalid
@@ -368,8 +370,8 @@ def _pad_data(sensor_data: List[pd.DataFrame], report: Dict[str, Any], padding_t
 
         if padding_type == 'same':
             # create padding for beginning and end
-            padding_start = _create_padding(timestamps_start_pad, sensor_df.iloc[0, 1:].values)
-            padding_end = _create_padding(timestamps_end_pad, sensor_df.iloc[-1, 1:].values)
+            padding_start = _create_padding(timestamps_start_pad, np.array(sensor_df.iloc[0, 1:].values))
+            padding_end = _create_padding(timestamps_end_pad, np.array(sensor_df.iloc[-1, 1:].values))
         else:
             # create zero padding
             padding_start = _create_padding(timestamps_start_pad, np.zeros(len(sensor_df.columns) - 1))
@@ -407,7 +409,7 @@ def _create_padding(timestamps: List[Union[int, float]], values: np.ndarray):
     return np.column_stack((timestamps, padding))
 
 
-def _re_sample_data(sensor_data: List[pd.DataFrame], report:  Dict[str, Any], fs=100) -> List[pd.DataFrame]:
+def _re_sample_data(sensor_data: List[pd.DataFrame], report:  Dict[str, Any], fs=1000) -> List[pd.DataFrame]:
     """
     Resamples the sensor data to the specified sampling frequency.
     This function takes a list of sensor data DataFrames and resamples each sensor's data to the desired
@@ -417,7 +419,7 @@ def _re_sample_data(sensor_data: List[pd.DataFrame], report:  Dict[str, Any], fs
     :param sensor_data: A list of DataFrames, each containing sensor data. It is assumed that the first contains
                         the time axis, while the other columns contain sensor data.
     :param report: A dictionary containing metadata, including the sensor names under the key 'LOADED_SENSORS'.
-    :param fs: The target sampling frequency for the resampled data. Default: 100 (Hz)
+    :param fs: The target sampling frequency for the resampled data. Default: 1000 (Hz)
     :return: A list of DataFrames containing the resampled sensor data.
     """
 
@@ -453,3 +455,170 @@ def _re_sample_data(sensor_data: List[pd.DataFrame], report:  Dict[str, Any], fs
         re_sampled_data.append(interpolated_sensor_df)
 
     return re_sampled_data
+
+
+# ------------------------------------------------------------------------------------------------------------------- #
+# mBAN specific functions
+# ------------------------------------------------------------------------------------------------------------------- #
+def load_mban_data(folder_path: str, fs: int = MBAN_FS) -> List[pd.DataFrame]:
+    """
+    Load mBAN accelerometer data from a folder containing OpenSignals files.
+    
+    This function scans the folder for ALL OpenSignals mBAN files (identified by MAC addresses),
+    loads and processes them to extract accelerometer data (nSeq, x_ACC, y_ACC, z_ACC).
+    Each file is processed independently and returned as a separate DataFrame.
+    
+    :param folder_path: Path to the folder containing mBAN OpenSignals files
+    :param fs: Target sampling frequency for resampling. Default: MBAN_FS (1000 Hz)
+    :return: List of DataFrames with accelerometer data from each mBAN file
+    """
+    
+    # Check if folder exists
+    if not os.path.exists(folder_path):
+        raise ValueError(f"Folder path does not exist: {folder_path}")
+    
+    # Get all files in the folder
+    try:
+        files = os.listdir(folder_path)
+    except FileNotFoundError:
+        raise ValueError(f"The folder at path {folder_path} was not found.")
+    
+    # Filter for mBAN files
+    mban_files = []
+    
+    for file in files:
+        if file.startswith('opensignals_') and file.endswith('.txt'):
+            # Extract MAC address from filename
+            parts = file.split('_')
+            if len(parts) >= 2:
+                mac_address = parts[1]
+                if mac_address in MBAN_MAC_ADDRESS:
+                    mban_files.append(file)
+    
+    if not mban_files:
+        raise ValueError(f"No mBAN files found in {folder_path}. Looking for files with MAC addresses: {list(MBAN_MAC_ADDRESS.keys())}")
+    
+    print(f"Found {len(mban_files)} mBAN files: {mban_files}")
+    
+    # Load and process each mBAN file independently
+    processed_data = []
+    
+    for i, file_name in enumerate(mban_files, 1):
+        print(f"Loading mBAN file {i}/{len(mban_files)}: {file_name}")
+        
+        # Load the file
+        sensor_df = _load_mban_file(folder_path, file_name, f"mban_{i}")
+        
+        if sensor_df is not None and not sensor_df.empty:
+            processed_data.append(sensor_df)
+            print(f"  → Successfully loaded {len(sensor_df)} samples")
+        else:
+            print(f"  → Failed to load or empty file")
+    
+    if not processed_data:
+        raise ValueError("No valid mBAN data could be loaded from the files.")
+    
+    print(f"Successfully processed {len(processed_data)} mBAN files")
+    return processed_data # output is a list of DataFrames, one for each mBAN file, e.g., [df_mban_1, df_mban_2, ...], each df_mban_i has columns ['nSeq_mban_i', 'x_ACC_mban_i', 'y_ACC_mban_i', 'z_ACC_mban_i']
+
+
+def _load_mban_file(folder_path: str, file_name: str, file_id: str) -> pd.DataFrame:
+    """
+    Load a single mBAN OpenSignals file and extract accelerometer data.
+    
+    :param folder_path: Path to the folder containing the file
+    :param file_name: Name of the mBAN file
+    :param file_id: Identifier for this file (e.g., 'mban_1', 'mban_2')
+    :return: DataFrame with processed accelerometer data
+    """
+    
+    file_path = os.path.join(folder_path, file_name)
+    
+    try:
+        # Read the OpenSignals file, skipping header rows
+        sensor_df = pd.read_csv(file_path, delimiter='\t', header=None, skiprows=3)
+        
+        # Check if we have enough columns
+        required_cols = [MBAN_NSEQ_COL, MBAN_X_ACC_COL, MBAN_Y_ACC_COL, MBAN_Z_ACC_COL]
+        if sensor_df.shape[1] <= max(required_cols):
+            print(f"Warning: {file_name} doesn't have enough columns. Expected at least {max(required_cols)+1}, got {sensor_df.shape[1]}")
+            return pd.DataFrame()
+        
+        # Extract relevant columns: nSeq, xACC, yACC, zACC
+        extracted_data = sensor_df.iloc[:, required_cols].copy()
+        
+        # Set column names with file identifier
+        column_names = [
+            f'{MBAN_NSEQ}_{file_id}',
+            f'{MBAN_X_ACC}_{file_id}',
+            f'{MBAN_Y_ACC}_{file_id}',
+            f'{MBAN_Z_ACC}_{file_id}'
+        ]
+        extracted_data.columns = column_names
+        
+        return extracted_data
+        
+    except Exception as e:
+        print(f"Error loading {file_name}: {str(e)}")
+        return pd.DataFrame()
+
+def get_mban_accelerometer_data(folder_path: str) -> List[pd.DataFrame]:
+    """
+    Get ALL mBAN accelerometer data files for segmentation.
+    Returns data from each mBAN file in format compatible with existing segmentation functions.
+    
+    This function loads all mBAN files independently and processes each one separately
+    (no concatenation or merging). Each file includes nSeq column for missing data detection.
+    
+    :param folder_path: Path to folder containing mBAN files
+    :return: List of DataFrames, each with columns ['time', 'nSeq', 'x_ACC', 'y_ACC', 'z_ACC']
+    """
+    
+    # Load all mBAN data files independently
+    mban_data_list = load_mban_data(folder_path) 
+    
+    if not mban_data_list:
+        raise ValueError("No mBAN data could be loaded")
+    
+    processed_files = []
+    
+    for i, file_data in enumerate(mban_data_list, 1):
+        # Find the column names for this file
+        file_columns = []
+        for col in file_data.columns:
+            if col.startswith(MBAN_X_ACC):
+                file_columns.append(col)
+        
+        if not file_columns:
+            print(f"Warning: No accelerometer data found in mBAN file {i}, skipping...")
+            continue
+        
+        # Extract file identifier from column name
+        # Column format: 'x_ACC_mban_1' -> we want 'mban_1'
+        parts = file_columns[0].split('_')
+        file_id = '_'.join(parts[-2:])  # e.g., ['x', 'ACC', 'mban', '1'] -> 'mban_1'
+        
+        # Create time column from nSeq (convert sequence numbers to seconds)
+        nseq_data = file_data[f'{MBAN_NSEQ}_{file_id}']
+        time_data = nseq_data / MBAN_FS  # Convert nSeq to time using sampling frequency
+        
+        # Create output DataFrame for this file with STANDARDIZED column names
+        output_df = pd.DataFrame()
+        output_df['time'] = time_data  # Essential for segmentation compatibility
+        output_df['nSeq'] = nseq_data  # Keep original sequence numbers for missing data detection
+        output_df['x_ACC'] = file_data[f'{MBAN_X_ACC}_{file_id}']  # Standardized column name
+        output_df['y_ACC'] = file_data[f'{MBAN_Y_ACC}_{file_id}']  # Compatible with segment_activities
+        output_df['z_ACC'] = file_data[f'{MBAN_Z_ACC}_{file_id}']  # Standardized column name
+        
+        processed_files.append(output_df)
+        
+        print(f"Processed mBAN file {i}: {file_id}")
+        print(f"  Shape: {output_df.shape}")
+        print(f"  Duration: {output_df['time'].max() - output_df['time'].min():.2f} seconds")
+        print(f"  nSeq range: {output_df['nSeq'].min()} - {output_df['nSeq'].max()}")
+    
+    if not processed_files:
+        raise ValueError("No valid accelerometer data found in any mBAN files")
+    
+    print(f"Successfully processed {len(processed_files)} mBAN files for segmentation")
+    return processed_files

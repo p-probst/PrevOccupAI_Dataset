@@ -21,7 +21,7 @@ from pyquaternion import Quaternion
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def geodesic_distance(quaternion_array: np.array, scalar_first: bool = False) -> np.array:
+def geodesic_distance(quaternion_array: np.ndarray, scalar_first: bool = False) -> np.ndarray:
     """
     Calculates the geodesic distance between consecutive quaternions contained in the quaternion_array and calculates
     (1) mean distance

@@ -18,7 +18,7 @@ None
 import pandas as pd
 import numpy as np
 from sklearn.base import ClassifierMixin, BaseEstimator
-from sklearn.model_selection import GroupKFold, GridSearchCV
+from sklearn.model_selection import GroupKFold, GridSearchCV, StratifiedGroupKFold
 from sklearn.metrics import accuracy_score
 from typing import Dict, Any, List, Union
 
@@ -28,9 +28,9 @@ from constants import RANDOM_SEED
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, estimator: ClassifierMixin,
+def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, estimator: BaseEstimator,
                      param_grid: Union[List[Dict[str, Any]], Dict[str, Any]],
-                     splits_outer: int = 5, splits_inner: int = 2) -> pd.DataFrame():
+                     splits_outer: int = 5, splits_inner: int = 2) -> pd.DataFrame:
     """
     Performs nested cross-validation using GroupKFold to evaluate a machine learning model with hyperparameter tuning.
 
@@ -58,10 +58,10 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
     fold_info = []
 
     # set up cross-validation for outer loop
-    outer_cv = GroupKFold(n_splits=splits_outer, shuffle=True, random_state=RANDOM_SEED)
+    outer_cv = StratifiedGroupKFold(n_splits=splits_outer, shuffle=True, random_state=RANDOM_SEED)
 
     # set up inner cross-validation for hyperparameter tuning using gridSearch
-    inner_cv = GroupKFold(n_splits=splits_inner, shuffle=True, random_state=RANDOM_SEED)
+    inner_cv = StratifiedGroupKFold(n_splits=splits_inner, shuffle=True, random_state=RANDOM_SEED)
     grid_search = GridSearchCV(estimator=estimator, param_grid=param_grid, scoring='accuracy',
                                n_jobs=-1, cv=inner_cv, verbose=1, refit=True)
 
@@ -81,7 +81,8 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
         grid_search.fit(X_train, y_train, groups=subject_ids_inner_cv)
 
         # test the best estimator on the validation set of the current fold (this is possible as refit=True)
-        y_pred = grid_search.best_estimator_.predict(X_val)
+        best_estimator: Any = grid_search.best_estimator_
+        y_pred = best_estimator.predict(X_val)
         fold_acc = accuracy_score(y_val, y_pred) * 100
 
         # print the results
@@ -121,7 +122,7 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
     return info_df
 
 
-def tune_production_model(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, estimator: ClassifierMixin,
+def tune_production_model(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, estimator: BaseEstimator,
                           param_grid: Union[List[Dict[str, Any]], Dict[str, Any]],
                           cv_splits: int = 5):
     """
@@ -137,7 +138,7 @@ def tune_production_model(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series,
     """
 
     # set up cross-validation for hyperparameter tuning
-    cv = GroupKFold(n_splits=cv_splits, shuffle=True, random_state=RANDOM_SEED)
+    cv = StratifiedGroupKFold(n_splits=cv_splits, shuffle=True, random_state=RANDOM_SEED)
     grid_search = GridSearchCV(estimator=estimator, param_grid=param_grid, scoring='accuracy',
                                n_jobs=1, cv=cv, verbose=1, refit=True)
 

@@ -4,7 +4,9 @@ Function for applying post-processing schemes to a prediction of a given classif
 Available Functions
 -------------------
 [Public]
-optimize_post_processing(...): Executes a post-processing pipeline for HAR using a pre-trained model
+optimize_post_processing(...): Executes a podef _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
+                              fs: int, nr_samples_mv: Optional[int], threshold: Optional[float], min_durations: Optional[Dict[int,float]],
+                              subject_id: str) -> Tuple[Dict[str, Dict[str, float]], Optional[Dict[int, float]], Optional[Dict[float, float]], Optional[Dict[str, float]]:processing pipeline for HAR using a pre-trained model
 
 -------------------
 [Private]
@@ -46,7 +48,7 @@ from file_utils import create_dir
 # ------------------------------------------------------------------------------------------------------------------- #
 
 def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: int, w_size: float,
-                             min_durations: Optional[Dict[int, int]] = None, threshold: Optional[float] = None,
+                             min_durations: Optional[Dict[int, float]] = None, threshold: Optional[float] = None,
                              load_sensors: Optional[List[str]] = None, nr_samples_mv: Optional[int] = None) -> None:
     """
     Executes a post-processing pipeline for Human Activity Recognition (HAR) using a pre-trained model.
@@ -117,7 +119,7 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
         subject_data['labels'] = labels
 
         # get the sensor names
-        sensor_names = subject_data.columns.values[1:-1]
+        sensor_names = subject_data.columns.values[1:-1].tolist()
 
         # pre process signals
         sensor_data, true_labels = pre_process_signals(subject_data, sensor_names, w_size=w_size, fs=fs)
@@ -133,7 +135,7 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
         features = features[feature_names]
 
         # classify and post-process
-        results_dict, opt_mv_results, opt_tt_results, opt_heur_results = _evaluate_post_processing(features, true_labels, har_model, w_size, fs,
+        results_dict, opt_mv_results, opt_tt_results, opt_heur_results = _evaluate_post_processing(features.values, true_labels, har_model, w_size, fs,
                                                                                                    nr_samples_mv, threshold, min_durations, subject)
 
         # add to dictionary
@@ -181,7 +183,7 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
 
 
 def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
-                              fs: int, nr_samples_mv: Optional[int], threshold: Optional[float], min_durations: Optional[Dict[int,int]],
+                              fs: int, nr_samples_mv: Optional[int], threshold: Optional[float], min_durations: Optional[Dict[int,float]],
                               subject_id: str) -> Tuple[Dict[str, Dict[str, float]], Optional[Dict[int, float]], Optional[Dict[float, float]], Optional[Dict[str, float]]]:
     """
     Evaluates the performance of multiple post-processing schemes applied to the predictions of a
@@ -263,14 +265,21 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     # apply threshold tuning
     y_pred_tt = threshold_tuning(y_pred_proba, y_pred,0,1, threshold)
 
-    # apply heuristics
-    y_pred_heur = heuristics_correction(y_pred, w_size, min_durations)
+    # apply heuristics (convert min_durations values to float if needed)
+    if min_durations is not None:
+        min_durations_float = {k: float(v) for k, v in min_durations.items()}
+        y_pred_heur = heuristics_correction(y_pred, w_size, min_durations_float)
+    else:
+        y_pred_heur = y_pred
 
     # combine tt with mv
     y_pred_tt_mv = majority_vote_mid(y_pred_tt, 9)
 
     # combine tt with heuristics
-    y_pred_tt_heur = heuristics_correction(y_pred_tt, w_size, min_durations)
+    if min_durations is not None:
+        y_pred_tt_heur = heuristics_correction(y_pred_tt, w_size, min_durations_float)
+    else:
+        y_pred_tt_heur = y_pred_tt
 
     # append predictions to list
     predictions += [y_pred, y_pred_mv, y_pred_tt, y_pred_heur, y_pred_tt_mv, y_pred_tt_heur]
@@ -288,19 +297,19 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
 
         # calculate accuracy
         accuracy = accuracy_score(labels, y_pred_expanded)
-        accuracies.append(round(accuracy*100, 2))
+        accuracies.append(round(float(accuracy)*100, 2))
 
         # calculate precision
         precision = precision_score(labels, y_pred_expanded, average='weighted')
-        precisions.append(round(precision*100, 2))
+        precisions.append(round(float(precision)*100, 2))
 
         # calculate recall
         recall = recall_score(labels, y_pred_expanded, average='weighted')
-        recalls.append(round(recall* 100, 2))
+        recalls.append(round(float(recall)* 100, 2))
 
         # calculate f1-score
         f1 = f1_score(labels, y_pred_expanded, average='weighted')
-        f1_scores.append(round(f1* 100, 2))
+        f1_scores.append(round(float(f1)* 100, 2))
 
     # get a list containing the type of post-processing schemes
     post_processing_schemes = ["vanilla model", "majority voting", "threshold tuning", "heuristics",
@@ -310,7 +319,7 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     durations_dict = dict(zip(post_processing_schemes, class_duration))
 
     # calculate the percentage of the true labels
-    true_durations = _calculate_class_percentages(labels)
+    true_durations = _calculate_class_percentages(labels.tolist())
 
     # add to dictionary
     durations_dict["true_dur"] = true_durations
@@ -490,7 +499,7 @@ def _optimize_majority_voting_window(y_pred: np.ndarray, true_labels: np.ndarray
 
 
 def _optimize_heuristics_parameters(y_pred: np.ndarray, labels: np.ndarray, w_size: float, fs: int) \
-                                    -> Tuple[Dict[int, int], Dict[str, float]]:
+                                    -> Tuple[Dict[int, float], Dict[str, float]]:
     """
     Performs a grid search to find the optimal minimum duration thresholds for heuristic-based post-processing.
 
@@ -539,7 +548,7 @@ def _optimize_heuristics_parameters(y_pred: np.ndarray, labels: np.ndarray, w_si
         list_combinations.append(duration_list)
 
         # update minimum durations dictionary
-        min_durations = {class_id: dur for class_id, dur in zip(class_ids, duration_list)}
+        min_durations = {class_id: float(dur) for class_id, dur in zip(class_ids, duration_list)}
 
         # adjust the prediction with heuristics
         y_pred_heur = heuristics_correction(y_pred, w_size, min_durations)

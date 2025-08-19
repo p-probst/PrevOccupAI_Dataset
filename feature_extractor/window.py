@@ -32,7 +32,7 @@ SCALERS = [MINMAX_SCALER, STANDARD_SCALER]
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def get_sliding_windows_indices(signal: np.array, fs: int, window_size: float, overlap: float = 0.5):
+def get_sliding_windows_indices(signal: np.ndarray, fs: int, window_size: float, overlap: float = 0.5) -> np.ndarray:
     """
     Function to obtain window indices with an adjustable overlap between windows.
     :param signal: a 1-D signal or the time axis of multiple synchronised signals
@@ -91,7 +91,7 @@ def window_data(data, indices):
     return data[indices]
 
 
-def window_scaling(windowed_data: np.array, scaler: str = 'minmax') -> np.array:
+def window_scaling(windowed_data: np.ndarray, scaler: str = 'minmax') -> np.ndarray:
     """
     Performs scaling on each window using the provided scaler.
     :param windowed_data: the windowed data
@@ -119,7 +119,7 @@ def window_scaling(windowed_data: np.array, scaler: str = 'minmax') -> np.array:
     else:
 
         mean_vals = np.mean(windowed_data, axis=1, keepdims=True)
-        std_vals = np.mean(windowed_data, axis=1, keepdims=True)
+        std_vals = np.std(windowed_data, axis=1, keepdims=True) # bug fixed: changed mean to std
 
         scaled_data = (windowed_data - mean_vals) / std_vals
 

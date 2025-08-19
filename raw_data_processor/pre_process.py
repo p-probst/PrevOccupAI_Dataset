@@ -26,7 +26,7 @@ from .filters import median_and_lowpass_filter, gravitational_filter
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def pre_process_inertial_data(sensor_data: np.array, is_acc: bool = False, fs: int = 100, normalize: bool = False) -> np.array:
+def pre_process_inertial_data(sensor_data: np.ndarray, is_acc: bool = False, fs: int = 1000, normalize: bool = False) -> np.ndarray:
     """
     Applies the pre-processing pipeline of "A Public Domain Dataset for Human Activity Recognition Using Smartphones"
     (https://www.esann.org/sites/default/files/proceedings/legacy/es2013-84.pdf). The pipeline consists of:
@@ -65,8 +65,8 @@ def pre_process_inertial_data(sensor_data: np.array, is_acc: bool = False, fs: i
     return filtered_data
 
 
-def slerp_smoothing(quaternion_array: np.array, smooth_factor: float = 0.5, scalar_first: bool = False,
-                    return_numpy: bool = True, return_scalar_first: bool = False) -> np.array:
+def slerp_smoothing(quaternion_array: np.ndarray, smooth_factor: float = 0.5, scalar_first: bool = False,
+                    return_numpy: bool = True, return_scalar_first: bool = False) -> np.ndarray:
     """
     Smooths a quaternion time series using spherical linear interpolation (SLERP).
 

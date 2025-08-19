@@ -82,7 +82,4 @@ def load_json_file(json_path: str) -> Dict[Any, Any]:
     with open(json_path, "r") as file:
         json_dict = json.load(file)
 
-    return json_dict
-# ------------------------------------------------------------------------------------------------------------------- #
-# private functions
-# ------------------------------------------------------------------------------------------------------------------- #
+    return json_dict #output dict 

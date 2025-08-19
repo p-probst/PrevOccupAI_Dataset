@@ -25,15 +25,13 @@ from scipy.interpolate import CubicSpline
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def cubic_spline_interpolation(sensor_df: pd.DataFrame, fs: int = 100) -> pd.DataFrame:
+def cubic_spline_interpolation(sensor_df: pd.DataFrame, fs: int = 1000) -> pd.DataFrame:
     """
-    Apply cubic spline interpolation to resample sensor data at a given frequency.
-    This function interpolates time-series sensor data using cubic splines. The first column of `sensor_df` is assumed
-    to be the time axis, while the remaining columns contain sensor measurements.
+    Applies Cubic Spline Interpolation to the data of a sensor
 
-    :param sensor_df: A DataFrame containing timestamps in the first column and sensor data in the remaining columns.
-    :param fs: The target sampling frequency in Hz. Default: 100 (Hz)
-    :return: A DataFrame containing the resampled time axis and interpolated sensor values.
+    :param sensor_df: The dataframe that contains sensor data ordered in time. It is expected to have a 'time' column
+    :param fs: The target sampling frequency in Hz. Default: 1000 (Hz)
+    :return: The cubic spline interpolated result.
     """
 
     # extract time axis
@@ -65,7 +63,7 @@ def cubic_spline_interpolation(sensor_df: pd.DataFrame, fs: int = 100) -> pd.Dat
     return interpolated_df
 
 
-def slerp_interpolation(rotvec_df: pd.DataFrame, fs: int = 100) -> pd.DataFrame:
+def slerp_interpolation(rotvec_df: pd.DataFrame, fs: int = 1000) -> pd.DataFrame:
     """
     Perform SLERP (Spherical Linear Interpolation) over a quaternion time series.
     This function interpolates a given time series of quaternions using SLERP, resampling it
@@ -73,7 +71,7 @@ def slerp_interpolation(rotvec_df: pd.DataFrame, fs: int = 100) -> pd.DataFrame:
 
     :param rotvec_df: A DataFrame containing timestamp values in the first column and quaternion
                       components (x, y, z, w) in the subsequent columns.
-    :param fs: The target sampling frequency in Hz. Default: 100 (Hz)
+    :param fs: The target sampling frequency in Hz. Default: 1000 (Hz)
     :return: A DataFrame containing the interpolated timestamps and quaternions.
     """
 

@@ -29,7 +29,7 @@ _pre_process_sensors(...): Pre-processes the sensors contained in data_array acc
 import os
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from tqdm import tqdm
 import json
 import tsfel
@@ -56,8 +56,155 @@ TSFEL_CONFIG_FILE = 'cfg_file.json'
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def extract_features(data_path: str, features_data_path: str, activities: List[str] = None, fs: int = 100,
-                     window_size: float = 1.5, overlap: float = 0.5, window_scaler: str = None,
+def extract_mban_features(data_path: str, features_data_path: str, activities: Optional[List[str]] = None, fs: int = 1000,
+                          window_size: float = 0.5, overlap: float = 0.5, window_scaler: Optional[str] = None,
+                          output_file_type: str = NPY) -> None:
+    """
+    Extracts features for all subjects and activities from mBAN segmented data. Features are extracted window-wise.
+    Only TSFEL features are extracted from 3-axis accelerometer data.
+
+    The features of each subject (for all activities) are stored together in a file that is named after the subject
+    (e.g., 'P001'). The last two columns in those files correspond to the main and sub-activity label, while the other
+    columns correspond to the extracted features.
+    """
+
+    # check if there were no activities passed
+    if activities is None:
+        activities = VALID_ACTIVITIES
+
+    # check validity of provided activities
+    activities = _validate_activity_input(activities)
+
+    # check validity of the provided scaler if not None
+    if window_scaler:
+        validate_scaler_input(window_scaler)
+
+    # get the features to be extracted TSFEL
+    features_dict = load_json_file(os.path.join(Path(__file__).parent, TSFEL_CONFIG_FILE))
+
+    # json_dict for holding the information of the class instances and the features extracted
+    json_dict = {}
+    feature_names = []  # Initialize feature names list
+
+    # generate output path (folder) where all the feature files are stored
+    output_path = _generate_outfolder(features_data_path, window_scaler, int(window_size*fs))
+
+    # list all .npy files in the flat directory, excluding failed files and hidden files
+    all_files = [file for file in os.listdir(data_path) if file.endswith('.npy') and not file.endswith('_failed.npy') and not file.startswith('.')]
+
+    # Group files by participant
+    participant_files = {}
+    for file in all_files:
+        # Extract participant ID (P001, P002, etc.)
+        participant_id = file.split('_')[0]  # Gets 'P001' from 'P001_sitting_file01_...'
+        
+        if participant_id not in participant_files:
+            participant_files[participant_id] = []
+        participant_files[participant_id].append(file)
+
+    # Process each participant separately
+    for participant_num, participant_idx in enumerate(sorted(participant_files.keys()), start=1):
+        print(f"\n#======================================================================#")
+        print(f"# Processing Participant {participant_idx} ({participant_num}/{len(participant_files)})")
+        print(f"# Files to process: {len(participant_files[participant_idx])}")
+        print(f"#======================================================================#")
+
+        participant_feature_df_list = []
+
+        # Process all files for this participant
+        for file_num, file in enumerate(participant_files[participant_idx], start=1):
+            print(f"\n#----------------------------------------------------------------------#")
+            print(f"# Extracting mBAN features for file {file_num}/{len(participant_files[participant_idx])}: {file}")
+
+            try:
+                # (1) load the mBAN data
+                data, sensor_names = load_mban_data(os.path.join(data_path, file))
+                
+                # Check if data is long enough for windowing
+                min_samples_needed = int(window_size * fs * 1.5)  # Need at least 1.5 windows worth of data
+                if len(data) < min_samples_needed:
+                    print(f"⚠️  WARNING: File {file} has only {len(data)} samples")
+                    print(f"⚠️  Need at least {min_samples_needed} samples for {window_size}s windows")
+                    print(f"⚠️  Skipping this file (too short for windowing)")
+                    continue
+
+            except FileNotFoundError as e:
+                print(f"⚠️  Skipping corrupted/unreadable file: {file}")
+                continue  # Skip this file and move to the next one
+            except Exception as e:
+                print(f"❌ Unexpected error with file {file}: {e}")
+                continue
+
+            # (2) pre-process the accelerometer data (skip nSeq column)
+            print(f"({file_num}.2) pre-processing accelerometer data")
+            data = _pre_process_mban_sensors(data, fs=fs)
+
+            # remove impulse response (from 1000Hz, remove 250 samples = 0.25s)
+            data = data[250:, :]
+
+            # (3) window the data (use first ACC column for timing)
+            print(f"({file_num}.3) windowing data")
+            indices = get_sliding_windows_indices(data[:, 0], fs=fs, window_size=window_size, overlap=overlap)
+            
+            # Check if we got any valid windows
+            if len(indices) == 0:
+                print(f"⚠️  WARNING: No valid windows generated from {file}")
+                print(f"⚠️  Data length after preprocessing: {len(data)} samples")
+                print(f"⚠️  Skipping this file")
+                continue
+                
+            windowed_data = window_data(data, indices)            # normalize windows if requested
+            if window_scaler:
+                print(f"({file_num}.4) scaling windows with {window_scaler}")
+                windowed_data = window_scaling(windowed_data, scaler=window_scaler)
+
+            # (4) extract features and labels
+            print(f"({file_num}.5) extracting TSFEL features")
+            features_df = _extract_mban_features(windowed_data, fs=fs, features_dict=features_dict)
+            
+            # Capture feature names from the first file processed
+            if not feature_names:  # Only capture once
+                feature_names = list(features_df.columns)
+
+            # (5) get labels
+            print(f"({file_num}.6) getting labels from mBAN file name")
+            labels_df = _get_mban_labels(file, num_windows=len(features_df))
+
+            # (6) combine features and labels
+            combined_df = pd.concat([features_df, labels_df], axis=1)
+            participant_feature_df_list.append(combined_df)
+
+        # Combine all features for this participant
+        if participant_feature_df_list:
+            participant_features_df = pd.concat(participant_feature_df_list, axis=0, ignore_index=True)
+            
+            # Save features for this participant
+            print(f"\n# Saving features for participant {participant_idx}")
+            print(f"# Total windows for {participant_idx}: {len(participant_features_df)}")
+            _save_subject_features(participant_features_df, participant_idx, output_path, output_file_type)
+
+            # Update class instance counts
+            main_labels = participant_features_df[MAIN_LABEL_KEY].values
+            sub_labels = participant_features_df[SUB_LABEL_KEY].values
+            
+            for main_label, sub_label in zip(main_labels, sub_labels):
+                key = f"{main_label}_{sub_label}"
+                json_dict[key] = json_dict.get(key, 0) + 1
+
+    # Save metadata
+    print(f"\n# Saving metadata and class instances")
+    save_class_instances_json(json_dict, feature_names, output_path)
+    
+    print(f"\n#======================================================================#")
+    print(f"# Feature extraction complete!")
+    print(f"# Output directory: {output_path}")
+    print(f"# Participants processed: {len(participant_files)}")
+    print(f"# Total class instances: {sum(json_dict.values())}")
+    print(f"#======================================================================#")
+
+
+def extract_features(data_path: str, features_data_path: str, activities: Optional[List[str]] = None, fs: int = 1000,
+                     window_size: float = 1.5, overlap: float = 0.5, window_scaler: Optional[str] = None,
                      output_file_type: str = NPY, default_input_file_type: str = NPY) -> None:
     """
     Extracts features for all subjects and activities contained in data_path. Features are extracted window-wise.
@@ -233,11 +380,11 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
         json.dump(json_dict, json_file)
 
 
-def load_data(full_file_path: str) -> np.array:
+def load_data(full_file_path: str) -> Tuple[np.ndarray, List[str]]:
     """
     loads the data located at full_file_path.
     :param full_file_path: the path to the file to be loaded
-    :return: a numpy.array containing the loaded data
+    :return: a tuple containing the loaded data as a numpy array and the sensor names as a list of strings
     """
 
     # retrieve the file type from the path
@@ -257,6 +404,7 @@ def load_data(full_file_path: str) -> np.array:
 
         # get the names of the sensors from the DataFrame
         sensor_names = activity_data.columns.values[1:]
+        sensor_names = list(sensor_names.astype(str))
 
         # get data as numpy array
         activity_data = activity_data.values
@@ -264,8 +412,53 @@ def load_data(full_file_path: str) -> np.array:
     return activity_data, sensor_names
 
 
-def extract_tsfel_features(windowed_data: np.array, sensor_names: List[str], features_dict: Dict[Any, Any],
-                           fs: int = 100) -> pd.DataFrame:
+def load_mban_data(full_file_path: str) -> Tuple[np.ndarray, List[str]]:
+    """
+    Loads mBAN segmented data from a numpy file with error handling.
+    :param full_file_path: the path to the mBAN .npy file to be loaded
+    :return: a tuple containing the loaded data as a numpy array and the sensor names as a list of strings
+    """
+    
+    try:
+        # load the mBAN data (expected format: [nSeq, x_ACC, y_ACC, z_ACC])
+        activity_data = np.load(full_file_path)
+        
+        # Validate data format
+        if len(activity_data.shape) != 2:
+            raise ValueError(f"Expected 2D array, got {len(activity_data.shape)}D array")
+            
+        if activity_data.shape[1] != 4:
+            raise ValueError(f"Expected 4 columns (nSeq, x_ACC, y_ACC, z_ACC), got {activity_data.shape[1]}")
+        
+        # define mBAN sensor names (skip nSeq for feature extraction)
+        sensor_names = ['x_ACC', 'y_ACC', 'z_ACC']
+        
+        # extract only accelerometer data (skip nSeq column)
+        activity_data = activity_data[:, 1:]  # Remove nSeq column
+        
+        return activity_data, sensor_names
+        
+    except (OSError, IOError, ValueError) as e:
+        if "Failed to read all data" in str(e) or "file seems not fully written" in str(e):
+            print(f"❌ ERROR: Corrupted/incomplete file {full_file_path}")
+            print(f"❌ Reason: File appears to be truncated or not fully written")
+        elif "Expected" in str(e):
+            print(f"❌ ERROR: Invalid data format in {full_file_path}")
+            print(f"❌ Reason: {e}")
+        else:
+            print(f"❌ ERROR: Could not read file {full_file_path}")
+            print(f"❌ Reason: {e}")
+        print(f"❌ Skipping this file and continuing...")
+        raise FileNotFoundError(f"Unreadable file: {full_file_path}")
+        
+    except Exception as e:
+        print(f"❌ ERROR: Unexpected error reading file {full_file_path}")
+        print(f"❌ Reason: {e}")
+        raise
+
+
+def extract_tsfel_features(windowed_data: np.ndarray, sensor_names: List[str], features_dict: Dict[Any, Any],
+                           fs: int = 1000) -> pd.DataFrame:
     """
     Extracts features from the data windows contained in windowed_data using TSFEL. The extracted features are defined
     in 'cfg_file.json'.
@@ -380,7 +573,7 @@ def _validate_activity_input(activities: List[str]) -> List[str]:
     return activities
 
 
-def _generate_outfolder(features_data_path: str, window_scaler: str, window_size_samples: float) -> str:
+def _generate_outfolder(features_data_path: str, window_scaler: Optional[str], window_size_samples: float) -> str:
     """
     Generates the folders for storing the data
     :param features_data_path: data path to where the data should be stored
@@ -426,14 +619,14 @@ def _load_sensor_names(data_file_path: str) -> List[str]:
     return sensor_names
 
 
-def _extract_features(windowed_data: np.array, sensor_names: List[str],
-                      features_dict: Dict[Any, Any], fs: int = 100) -> pd.DataFrame:
+def _extract_features(windowed_data: np.ndarray, sensor_names: List[str],
+                      features_dict: Dict[Any, Any], fs: int = 1000) -> pd.DataFrame:
     """
     Extracts features from the windowed data.
     (1) TSFEL: defined in cfg_file.json
     (2) Quaternion-based: mean, std, and total geodesic distance.
     :param windowed_data: the windowed data
-    :param sensor_names: the name of the sensors contained in windowed data
+    :param sensor_names: the name of the sensors contained in the windowed data
     :param features_dict: the feature dictionary loaded from cfg_file.json
     :param fs: the sampling frequency (in Hz). Default: 100
     :return: pandas.DataFrame containing the extracted features
@@ -456,7 +649,7 @@ def _extract_features(windowed_data: np.array, sensor_names: List[str],
     return features_df
 
 
-def _get_labels(file_name: str, num_windows: int) -> pd.DataFrame():
+def _get_labels(file_name: str, num_windows: int) -> pd.DataFrame:
     """
     Gets the labels for the main and sub-activity corresponding to the file name. The file name encodes the main and
     sub-activity.
@@ -482,7 +675,130 @@ def _get_labels(file_name: str, num_windows: int) -> pd.DataFrame():
     return pd.DataFrame(label_data, columns=[MAIN_LABEL_KEY, SUB_LABEL_KEY])
 
 
-def _save_subject_features(subject_feature_df: pd.DataFrame(), subject_num: str, output_path: str,
+def _get_mban_labels(file_name: str, num_windows: int) -> pd.DataFrame:
+    """
+    Gets the labels for mBAN files based on the filename formats.
+    Handles all structured labels:
+    
+    Main-activities: sitting, standing, cabinets, walking, stairs
+    - Numbers after main activities (e.g., sitting2 → sitting) are removed
+    
+    Sub-activities:
+    - sitting: sitting
+    - standing: stand_still_1, stand_still_2 → stand_still; stand_conversing
+    - cabinets: drink_coffee, moving_objects
+    - walking: walk_slow, walk_medium, walk_fast
+    - stairs: stairs_up_1, stairs_up_2 → stairs_up; stairs_down_1, stairs_down_2 → stairs_down
+    
+    :param file_name: the name of the mBAN file
+    :param num_windows: the number of windows into which the data was windowed
+    :return: pandas.DataFrame containing the labels.
+    """
+
+    print("--> getting labels from mBAN file name")
+    # Remove extension and split by underscore
+    parts = os.path.splitext(file_name)[0].split('_')
+    
+    # Expected format: P{ID}_{MAIN_ACTIVITY}_file{XX}_{SUB_ACTIVITY}_{EXTRA}_GlobalSegment{N}
+    if len(parts) < 4:
+        raise ValueError(f"mBAN filename format not recognized: {file_name}")
+    
+    # Extract main activity from position 1 and remove trailing numbers
+    main_activity_raw = parts[1]  # e.g., 'sitting2', 'cabinets', 'walking'
+    main_activity = ''.join(char for char in main_activity_raw if not char.isdigit())  # Remove numbers
+    
+    # Extract sub-activity from positions 3+ (skip 'file{XX}')
+    sub_activity_parts = []
+    for i in range(3, len(parts)):
+        part = parts[i]
+        # Skip file markers, segment markers, and standalone numbers
+        if ('file' not in part and 'Segment' not in part and 
+            not part.isdigit() and part not in ['1', '2', '3', '4']):
+            sub_activity_parts.append(part)
+    
+    # Join sub-activity parts to create full sub-activity name
+    sub_activity_raw = '_'.join(sub_activity_parts)
+    
+    # Map sub-activities according to structured labels
+    if main_activity == 'sitting':
+        sub_activity = 'sitting'
+        
+    elif main_activity == 'standing':
+        if 'still' in sub_activity_raw:
+            sub_activity = 'stand_still'  # stand_still_1, stand_still_2 → stand_still
+        elif 'conversing' in sub_activity_raw:
+            sub_activity = 'stand_conversing'
+        else:
+            sub_activity = 'stand_still'  # default
+            
+    elif main_activity == 'cabinets':
+        if 'drink' in sub_activity_raw or 'coffee' in sub_activity_raw:
+            sub_activity = 'drink_coffee'
+        elif 'moving' in sub_activity_raw or 'objects' in sub_activity_raw:
+            sub_activity = 'moving_objects'
+        else:
+            sub_activity = 'drink_coffee'  # default
+            
+    elif main_activity == 'walking':
+        if 'slow' in sub_activity_raw:
+            sub_activity = 'walk_slow'
+        elif 'medium' in sub_activity_raw or 'normal' in sub_activity_raw:
+            sub_activity = 'walk_medium'
+        elif 'fast' in sub_activity_raw:
+            sub_activity = 'walk_fast'
+        else:
+            sub_activity = 'walk_slow'  # default
+            
+    elif main_activity == 'stairs':
+        if 'up' in sub_activity_raw:
+            sub_activity = 'stairs_up'  # stairs_up_1, stairs_up_2 → stairs_up
+        elif 'down' in sub_activity_raw:
+            sub_activity = 'stairs_down'  # stairs_down_1, stairs_down_2 → stairs_down
+        else:
+            sub_activity = 'stairs_up'  # default
+    else:
+        raise ValueError(f"Unknown main activity: {main_activity}")
+
+    # Validate that we have the activity in our mapping
+    if main_activity not in ACTIVITY_MAIN_SUB_CLASS:
+        raise ValueError(f"Main activity '{main_activity}' not found in ACTIVITY_MAIN_SUB_CLASS")
+    
+    if sub_activity not in ACTIVITY_MAIN_SUB_CLASS[main_activity]:
+        raise ValueError(f"Sub-activity '{sub_activity}' not found for main activity '{main_activity}'")
+
+    # Get corresponding main and subclasses
+    main_class = ACTIVITY_MAIN_SUB_CLASS[main_activity][MAIN_CLASS_KEY]
+    sub_class = ACTIVITY_MAIN_SUB_CLASS[main_activity][sub_activity]
+
+    print(f'--> main activity: {main_activity} | class: {main_class}')
+    print(f'--> sub-activity: {sub_activity} | class: {sub_class}')
+    print(f'--> parsed from: {file_name}')
+
+    # generate the DataFrame
+    label_data = np.tile(np.array([main_class, sub_class]), (num_windows, 1))
+
+    return pd.DataFrame(label_data, columns=[MAIN_LABEL_KEY, SUB_LABEL_KEY])
+
+
+def _extract_mban_features(windowed_data: np.ndarray, fs: int, features_dict: Dict[Any, Any]) -> pd.DataFrame:
+    """
+    Extracts TSFEL features from mBAN windowed accelerometer data.
+    :param windowed_data: the windowed accelerometer data (num_windows, window_size, 3)
+    :param fs: the sampling frequency (in Hz)
+    :param features_dict: the feature dictionary loaded from cfg_file.json
+    :return: pandas.DataFrame containing the extracted features
+    """
+    
+    # mBAN sensor names for TSFEL
+    sensor_names = ['x_ACC', 'y_ACC', 'z_ACC']
+    
+    # extract TSFEL features from accelerometer data
+    features_df = extract_tsfel_features(windowed_data, sensor_names, features_dict, fs=fs)
+    
+    return features_df
+
+
+def _save_subject_features(subject_feature_df: pd.DataFrame, subject_num: str, output_path: str,
                            file_type: str = '.npy') -> None:
     """
     Saves the features extracted for a subject.
@@ -504,7 +820,7 @@ def _save_subject_features(subject_feature_df: pd.DataFrame(), subject_num: str,
         np.save(file_path, subject_feature_df.values)
 
 
-def _pre_process_sensors(data_array: np.array, sensor_names: List[str], fs=100) -> np.array:
+def _pre_process_sensors(data_array: np.ndarray, sensor_names: List[str], fs=1000) -> np.ndarray:
     """
     Pre-processes the sensors contained in data_array according to their sensor type.
     :param data_array: the loaded data
@@ -547,6 +863,43 @@ def _pre_process_sensors(data_array: np.array, sensor_names: List[str], fs=100) 
             print(f"The {valid_sensor} sensor is not in the loaded data. Skipping the pre-processing of this sensor.")
 
     return processed_data
+
+
+def _pre_process_mban_sensors(data_array: np.ndarray, fs: int = 1000) -> np.ndarray:
+    """
+    Pre-processes mBAN accelerometer data (3-axis accelerometer only).
+    :param data_array: the loaded mBAN data (x_ACC, y_ACC, z_ACC)
+    :param fs: the sampling frequency
+    :return: processed accelerometer data
+    """
+    
+    print("--> pre-processing mBAN accelerometer data")
+    
+    # apply accelerometer preprocessing to all 3 axes
+    processed_data = pre_process_inertial_data(data_array, is_acc=True, fs=fs)
+    
+    return processed_data
+
+
+def save_class_instances_json(json_dict: Dict[str, int], feature_names: List[str], output_path: str) -> None:
+    """
+    Saves the class instances and feature names to a JSON file.
+    :param json_dict: dictionary containing class instance counts
+    :param feature_names: list of feature names
+    :param output_path: path where the JSON file should be saved
+    :return: None
+    """
+    
+    # create the complete dictionary with feature names and class instances
+    complete_dict = {
+        'feature_cols': feature_names,
+        **json_dict
+    }
+    
+    # save the json file
+    json_file_path = os.path.join(output_path, CLASS_INSTANCES_JSON)
+    with open(json_file_path, "w") as json_file:
+        json.dump(complete_dict, json_file)
 
 
 

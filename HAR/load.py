@@ -43,8 +43,8 @@ SUB_CLASS_BALANCING = 'sub_classes'
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def load_features(feature_data_path: str, balance_data: str = None, default_input_file_type: str = NPY,
-                  random_state: int = None) -> Tuple[pd.DataFrame, pd.Series, pd.Series, pd.Series]:
+def load_features(feature_data_path: str, balance_data: str | None = None, default_input_file_type: str = NPY,
+                  random_state: int | None = None) -> Tuple[pd.DataFrame, pd.Series, pd.Series, pd.Series]:
     """
     Loads the extracted features from all the subjects. The function allows for balancing the data so that there is
     the same amount of instances for all subjects, thus avoiding data bias towards a specific class or subject.
@@ -223,7 +223,7 @@ def load_production_model(model_path: str) -> Tuple[RandomForestClassifier, List
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def _get_feature_names_and_instances(feature_data_path: str, balance_data: str = None) -> Tuple[List[str], Tuple[int, int, int]]:
+def _get_feature_names_and_instances(feature_data_path: str, balance_data: str | None = None) -> Tuple[List[str], Tuple[int, int, int] | None]:
     """
     Extracts feature names and determines the number of instances per sub-class based on the selected balancing strategy.
 
@@ -356,7 +356,7 @@ def _balance_sub_class(class_instances_df: pd.DataFrame) -> Tuple[int, int, int]
     return instances_sit, instances_stand, instances_walk
 
 
-def _load_file(file_path: str, file_type: str) -> np.array:
+def _load_file(file_path: str, file_type: str) -> np.ndarray:
     """
     loads the feature data based on its file type.
     :param file_path: the full path to the file
@@ -376,8 +376,7 @@ def _load_file(file_path: str, file_type: str) -> np.array:
     return subject_features
 
 
-def _balance_subject_data(subject_features: np.array, feature_names: List[str], instances_sit: int,
-                          instances_stand: int, instances_walk: int) -> np.array:
+def _balance_subject_data(subject_features: np.ndarray, feature_names: List[str], instances_sit: int, instances_stand: int, instances_walk: int) -> np.ndarray:
     """
     Balances the subject's feature data by selecting the needed number of instances from each subclass.
 

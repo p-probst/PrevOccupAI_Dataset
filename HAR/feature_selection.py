@@ -20,13 +20,14 @@ None
 from sklearn.feature_selection import VarianceThreshold, SelectKBest, f_classif
 import pandas as pd
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Optional
+from scipy import sparse
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def remove_low_variance(X_train: pd.DataFrame, X_test: pd.DataFrame=None, threshold: float = 0.1) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def remove_low_variance(X_train: pd.DataFrame, X_test: Optional[pd.DataFrame] = None, threshold: float = 0.1) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
     """
     Applies Variance Thresholding to remove low-variance features.
 
@@ -41,21 +42,22 @@ def remove_low_variance(X_train: pd.DataFrame, X_test: pd.DataFrame=None, thresh
     # Get the retained feature names
     retained_columns = X_train.columns[selector.get_support()]
 
-    # Convert back to DataFrame
+    # Convert back to DataFrame (ensure dense array)
+    X_train_selected = np.asarray(X_train_selected)
     X_train_filtered = pd.DataFrame(X_train_selected, columns=retained_columns, index=X_train.index)
 
     # Apply transformation to X_test
-    if isinstance(X_test, pd.DataFrame):
+    if X_test is not None:
         X_test_selected = selector.transform(X_test)
+        X_test_selected = np.asarray(X_test_selected)
         X_test_filtered = pd.DataFrame(X_test_selected, columns=retained_columns, index=X_test.index)
-
     else:
         X_test_filtered = None
 
     return X_train_filtered, X_test_filtered
 
 
-def remove_highly_correlated_features(X_train: pd.DataFrame, X_test: pd.DataFrame=None, threshold: float = 0.9) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def remove_highly_correlated_features(X_train: pd.DataFrame, X_test: Optional[pd.DataFrame] = None, threshold: float = 0.9) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
     """
     Removes highly correlated features from X_train and X_test.
 
@@ -77,7 +79,7 @@ def remove_highly_correlated_features(X_train: pd.DataFrame, X_test: pd.DataFram
     X_train_filtered = X_train.drop(columns=to_drop)
 
     # apply transformation to X_test
-    if isinstance(X_test, pd.DataFrame):
+    if X_test is not None:
         X_test_filtered = X_test.drop(columns=to_drop)
     else:
         X_test_filtered = None
@@ -85,7 +87,7 @@ def remove_highly_correlated_features(X_train: pd.DataFrame, X_test: pd.DataFram
     return X_train_filtered, X_test_filtered
 
 
-def select_k_best_features(X_train, y_train, X_test: pd.DataFrame=None, k=10):
+def select_k_best_features(X_train: pd.DataFrame, y_train: pd.Series, X_test: Optional[pd.DataFrame] = None, k: int = 10) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
     """
     Select the top k best features based on their relationship with the target variable.
 
@@ -108,10 +110,10 @@ def select_k_best_features(X_train, y_train, X_test: pd.DataFrame=None, k=10):
     X_train_selected = pd.DataFrame(X_train_selected, columns=selected_features, index=X_train.index)
 
     # apply transformation to X_test
-    if isinstance(X_test, pd.DataFrame):
+    if X_test is not None:
         X_test_selected = selector.transform(X_test)
+        X_test_selected = np.asarray(X_test_selected)
         X_test_selected = pd.DataFrame(X_test_selected, columns=selected_features, index=X_test.index)
-
     else:
         X_test_selected = None
 

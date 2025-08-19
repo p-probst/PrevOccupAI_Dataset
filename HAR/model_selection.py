@@ -101,7 +101,8 @@ def perform_model_selection(data_path: str, balancing_type: str, window_size_sam
 
             # add label encoding, as in this case the labels are non-consecutive
             le = LabelEncoder()
-            y_train = pd.Series(le.fit_transform(y_train))
+            y_train_encoded = le.fit_transform(y_train)
+            y_train = pd.Series(np.array(y_train_encoded), index=y_train.index)
 
         # get the subjects for training
         subject_ids_train = subject_ids.iloc[train_idx]
@@ -169,8 +170,10 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
 
         # add label encoding, as in this case the labels are non-consecutive
         le = LabelEncoder()
-        y_train = pd.Series(le.fit_transform(y_train))
-        y_test = pd.Series(le.fit_transform(y_test))
+        y_train_encoded = le.fit_transform(y_train)
+        y_test_encoded = le.transform(y_test)
+        y_train = pd.Series(np.array(y_train_encoded), index=y_train.index)
+        y_test = pd.Series(np.array(y_test_encoded), index=y_test.index)
 
     # get the subjects for training and testing
     subject_ids_train = subject_ids.iloc[train_idx]
@@ -185,7 +188,10 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     print(f"Used features: {X_train.columns.values}")
 
     # evaluate production model
-    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, subject_ids_test, window_size_samples, cv_splits=2)
+    if X_test is not None:
+        _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, subject_ids_test, window_size_samples, cv_splits=2)
+    else:
+        print("Error: X_test is None after feature selection")
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
@@ -277,7 +283,7 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     _test_individually(model, window_size_samples, X_test, y_test, subject_ids_test, out_path)
 
 
-def _test_all_subjects(model: RandomForestClassifier, window_size_samples: int, X_train: pd.DataFrame, X_test: pd.DataFrame,
+def _test_all_subjects(model, window_size_samples: int, X_train: pd.DataFrame, X_test: pd.DataFrame,
                        y_train: pd.Series, y_test: pd.Series, out_path: str) -> None:
     """
     Tests the model (Random Forest) on the data from all subjects in the test set. Generates and saves a confusion matrix
@@ -311,7 +317,7 @@ def _test_all_subjects(model: RandomForestClassifier, window_size_samples: int, 
     joblib.dump(model, model_path)
 
 
-def _test_individually(model: RandomForestClassifier, window_size_samples: int, X_test: pd.DataFrame, y_test: pd.Series,
+def _test_individually(model, window_size_samples: int, X_test: pd.DataFrame, y_test: pd.Series,
                        subject_ids_test: pd.Series, out_path:str) -> None:
     """
     Test the model on each test subject individually. Generates and saves the confusion matrices of each test subject.
