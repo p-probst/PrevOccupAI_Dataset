@@ -7,7 +7,7 @@ import os
 from constants import VALID_SENSORS, SEGMENTED_DATA_FOLDER, EXTRACTED_FEATURES_FOLDER, RANDOM_SEED
 from raw_data_processor import generate_segmented_dataset
 from feature_extractor import extract_features
-from HAR import perform_model_selection, train_production_model
+from HAR.ml import perform_model_selection, train_production_model
 import numpy as np
 
 
@@ -17,12 +17,12 @@ import numpy as np
 GENERATE_SEGMENTED_DATASET = False
 EXTRACT_FEATURES = False
 ML_HAR = True
-ML_MODEL_SELECTION = False
+ML_MODEL_SELECTION = True
 ML_TRAIN_PRODUCTION_MODEL = True
 
 # definition of folder_path
-RAW_DATA_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
-OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
+RAW_DATA_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
+OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here

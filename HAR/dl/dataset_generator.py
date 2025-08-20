@@ -7,6 +7,7 @@ somewhat different recording length. Thus, an imbalanced dataset is generated.
 Available Functions
 -------------------
 [Public]
+HARDataset(...): Class for defining the dataset
 generate_dataset(...): Generates dataset for Deep Learning
 
 ------------------
@@ -25,21 +26,28 @@ _calc_global_stats(...): Calculates global statistics (over all subjects).
 from typing import List, Dict, Union, Optional, Literal, Tuple
 import os
 import numpy as np
+import pandas as pd
 import torch
 from torch.utils.data import Dataset
+from sklearn.preprocessing import LabelEncoder
 
 # internal imports
 from constants import NPY, VALID_ACTIVITIES, VALID_SENSORS, ACC, GYR, MAG, MAIN_ACTIVITY_LABELS, \
-    SUB_ACTIVITIES_STAND_LABELS, SUB_ACTIVITIES_WALK_LABELS, CLASS_INSTANCES_JSON, SUBJECT_STATS_JSON
+    SUB_ACTIVITIES_STAND_LABELS, SUB_ACTIVITIES_WALK_LABELS, SUB_ACTIVITY_LABELS, CLASS_INSTANCES_JSON, SUBJECT_STATS_JSON
 from feature_extractor import get_sliding_windows_indices, window_data
 from feature_extractor.feature_extractor import load_data
 from file_utils import create_dir, remove_file_duplicates, save_json_file, get_labels, validate_activity_input, \
     load_json_file
 from raw_data_processor import pre_process_inertial_data, slerp_smoothing
+from ..data_balancer import MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING, balance_main_class, balance_sub_class, \
+    balance_subject_data
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # constants
 # ------------------------------------------------------------------------------------------------------------------- #
+# dataset name
+DL_DATASET = "DL_Dataset"
+
 
 # dictionary keys
 SENSOR_MEAN = "sensor_mean"
@@ -63,6 +71,7 @@ NORM_TYPES = [WINDOW_NORM, SUBJECT_NORM, GLOBAL_NORM]
 # self-defined typing hints
 NormalizationType = Optional[Literal[WINDOW_NORM, SUBJECT_NORM, GLOBAL_NORM]]
 NormMethod = Optional[Literal[Z_SCORE, MIN_MAX]]
+BalancingType = Optional[Literal[MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING]]
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
@@ -86,10 +95,12 @@ class HARDataset(Dataset):
                       "subject": each data sample is normalized using the corresponding subject's statistics
                       "global": each data sample is normalized using global statistics calculated over the entire dataset
                       None (default): no normalization applied
+    :param balancing_type:
     """
 
     def __init__(self, data_path: str, subject_ids: List[str],
-                 norm_method: NormMethod = None, norm_type: NormalizationType = None):
+                 norm_method: NormMethod = None, norm_type: NormalizationType = None,
+                 balancing_type: BalancingType = None):
 
         # input validation
         # (1) check path
@@ -109,11 +120,11 @@ class HARDataset(Dataset):
             raise ValueError("The provided subject IDs were not found in the dataset."
                              f"\nPlease choose from the following subject IDs are in the dataset: {sorted(available_subjects)}."
                              f"\nProvided subject_ids: {subject_ids}")
-        else:
+        if unknown_subjects:
             print(f"[WARNING]: The following subjects were not found in the dataset: {list(unknown_subjects)}"
                   "\nThese subjects are going to be ignored for model training/testing")
 
-        # (3) check norm_method
+        # (3) check norm_method and norm_type
         # (a) norm_method provided but no norm_type
         if norm_method and not norm_type:
             raise ValueError(f"norm_method was provided ({norm_method}), but no norm_type was given. "
@@ -132,20 +143,37 @@ class HARDataset(Dataset):
         if norm_method and norm_method not in NORM_METHODS:
             raise ValueError(f"Invalid norm_method: {norm_method}. Must be one of: {NORM_METHODS}.")
 
-        # (c) check norm_type validity
+        # (d) check norm_type validity
         if norm_type and norm_type not in NORM_TYPES:
             raise ValueError(f"Invalid norm_type: {norm_type}. Must be one of: {NORM_TYPES}.")
+
+        # (4) check balancing_type
+        if balancing_type and balancing_type not in [MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING]:
+            raise ValueError(f"Invalid balancing_type: {balancing_type}. "
+                             f"Must be one of: {[MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING]}")
+
 
         # init class variables
         self.data_path = data_path
         self.subject_ids = subject_ids
         self.norm_method = norm_method
         self.norm_type = norm_type
+        self.balancing_type = balancing_type
         self.stats = {}
 
-        # get files corresponding to the set subject_ids
-        self.files = [file_name for file_name in os.listdir(data_path)
-                      if file_name.endswith(".npy") and file_name.split('_')[0] in subject_ids]
+        # setup label encoder for sub-class labels
+        self.label_encoder = LabelEncoder()
+        self.label_encoder.fit(SUB_ACTIVITY_LABELS)
+
+        # balance data if necessary
+        if balancing_type:
+
+            print("balancing data...")
+            self.files = self._balance_data()
+        else:
+            # get all files corresponding to the set subject_ids (no balancing)
+            self.files = [file_name for file_name in os.listdir(data_path)
+                          if file_name.endswith(".npy") and file_name.split('_')[0] in subject_ids]
 
         # load the statistics in case a norm_type was chosen
         if norm_type in [SUBJECT_NORM, GLOBAL_NORM]:
@@ -157,7 +185,59 @@ class HARDataset(Dataset):
 
         return len(self.files)
 
-    def _min_max_norm(self, data_sample: np.array, subject_id: str):
+    def _balance_data(self):
+        """
+        balances the data according to the given balancing type.
+        :return:
+        """
+
+        # load class_instances json
+        class_instances = load_json_file(os.path.join(self.data_path, CLASS_INSTANCES_JSON))
+
+        # create Dataframe from json file
+        class_instances_df = pd.DataFrame.from_dict(class_instances, orient='index')
+
+        # get the instances for each sub-class according to the balancing type
+        if self.balancing_type == MAIN_CLASS_BALANCING:
+
+            instances_per_sub_class = balance_main_class(class_instances_df)
+
+        else:  # balancing_type == SUB_CLASS_BALANCING
+
+            instances_per_sub_class = balance_sub_class(class_instances_df)
+
+        # list for holding the balanced files
+        balanced_files = []
+
+        for subject_id in self.subject_ids:
+
+            # get the file paths corresponding to the instances of the subject
+            subject_files = [file_name for file_name in os.listdir(self.data_path)
+                             if file_name.endswith(".npy") and file_name.split('_')[0] == subject_id]
+
+            # obtain the sub-class labels that correspond to the instances
+            sub_class_labels = [get_labels("_".join(file_name.split("_")[1:3]), verbose=False)[1]
+                                for file_name in subject_files]
+
+            # transform sub_class_labels to array (for convinient processing)
+            sub_class_labels = np.array(sub_class_labels)
+
+            # get indices for balancing the instances
+            indices_balancing = balance_subject_data(sub_class_labels,
+                                                     instances_sit=instances_per_sub_class[0],
+                                                     instances_stand=instances_per_sub_class[1],
+                                                     instances_walk=instances_per_sub_class[2])
+
+            # obtain the file paths selected through balancing
+            subject_files_balanced = [subject_files[index] for index in indices_balancing]
+
+            # add the file paths to balanced_files
+            balanced_files.extend(subject_files_balanced)
+
+        # return balanced files
+        return balanced_files
+
+    def _min_max_norm(self, data_sample: np.array, subject_id: str) -> np.array:
         """
         Applies min-max normalization using the provided statistics
         :param data_sample: numpy.array of shape [window_size, num_channels]
@@ -170,7 +250,7 @@ class HARDataset(Dataset):
 
             # calculate window statistics
             window_mins = np.min(data_sample, axis=0, keepdims=True)
-            window_maxs = np.min(data_sample, axis=0, keepdims=True)
+            window_maxs = np.max(data_sample, axis=0, keepdims=True)
 
             return (data_sample - window_mins) / (window_maxs - window_mins)
 
@@ -195,7 +275,7 @@ class HARDataset(Dataset):
             return (data_sample - global_mins) / (global_maxs - global_mins)
 
 
-    def _zero_score_norm(self, data_sample: np.array, subject_id: str):
+    def _z_score_norm(self, data_sample: np.array, subject_id: str) -> np.array:
         """
         Applies zero-score normalization using the provided statistics
         :param data_sample: numpy.array of shape [window_size, num_channels]
@@ -218,7 +298,7 @@ class HARDataset(Dataset):
             # get the statistics of the corresponding subject
             subject_stats = self.stats.get(subject_id)
             subject_means = np.array(subject_stats[SENSOR_MEAN])
-            subject_stds = np.array(subject_stats[SENSOR_VAR])
+            subject_stds = np.sqrt(np.array(subject_stats[SENSOR_VAR]))
 
             return (data_sample - subject_means) / subject_stds
 
@@ -228,7 +308,7 @@ class HARDataset(Dataset):
             # get the global/population statistical
             global_stats = self.stats.get(GLOBAL_STATS)
             global_means = np.array(global_stats[SENSOR_MEAN])
-            global_stds = np.array(global_stats[SENSOR_VAR])
+            global_stds = np.sqrt(np.array(global_stats[SENSOR_VAR]))
 
             return (data_sample - global_means) / global_stds
 
@@ -248,14 +328,14 @@ class HARDataset(Dataset):
             # apply z-score normalization
             if self.norm_method == Z_SCORE:
 
-                return self._zero_score_norm(data_sample, subject_id)
+                return self._z_score_norm(data_sample, subject_id)
 
             # apply min-max normalization
             elif self.norm_method == MIN_MAX:
 
                 return self._min_max_norm(data_sample, subject_id)
 
-    def __getitem__(self, idx) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx) -> Tuple[torch.FloatTensor, torch.LongTensor, torch.LongTensor]:
         """
         loads a data sample and its corresponding main and sub-activity labels.
         :param idx: index of the file to load
@@ -273,7 +353,10 @@ class HARDataset(Dataset):
 
         # extract the main and sub-activity label
         main_sub_activity = "_".join(file_name.split("_")[1:3])
-        main_class, sub_class = get_labels(main_sub_activity)
+        main_class, sub_class = get_labels(main_sub_activity, verbose=False)
+
+        # encode sub-class label for continuous sub-class labels
+        sub_class = self.label_encoder.transform([sub_class])
 
         # load the data
         data_sample = np.load(os.path.join(self.data_path, file_name))
@@ -281,7 +364,7 @@ class HARDataset(Dataset):
         # apply normalization
         data_sample = self._normalize_data(data_sample, subject_id)
 
-        return torch.tensor(data_sample, dtype=torch.float32), torch.tensor(main_class, dtype=torch.long), torch.tensor(sub_class, dtype=torch.long)
+        return torch.tensor(data_sample, dtype=torch.float32), torch.tensor(main_class, dtype=torch.long), torch.tensor(sub_class[0], dtype=torch.long)
 
 
 def generate_dataset(data_path: str, output_path: str, activities: List[str] = None, fs: int = 100, window_size: float = 1.5,
@@ -474,7 +557,7 @@ def _generate_outfolder(features_data_path: str,  window_size_samples: float) ->
     # generate folder name
     folder_name = f"w_{window_size_samples}"
 
-    output_path = create_dir(features_data_path, os.path.join('DL_dataset', folder_name))
+    output_path = create_dir(features_data_path, os.path.join(DL_DATASET, folder_name))
 
     return output_path
 

@@ -97,7 +97,7 @@ def perform_model_selection(data_path: str, balancing_type: str, window_size_sam
             y_train = y_main.iloc[train_idx]
 
         else:  # sub-class balancing
-            y_train = y_sub[train_idx]
+            y_train = y_sub.iloc[train_idx]
 
             # add label encoding, as in this case the labels are non-consecutive
             le = LabelEncoder()
