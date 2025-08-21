@@ -335,7 +335,7 @@ class HARDataset(Dataset):
 
                 return self._min_max_norm(data_sample, subject_id)
 
-    def __getitem__(self, idx) -> Tuple[torch.FloatTensor, torch.LongTensor, torch.LongTensor]:
+    def __getitem__(self, idx) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         loads a data sample and its corresponding main and sub-activity labels.
         :param idx: index of the file to load
@@ -364,7 +364,8 @@ class HARDataset(Dataset):
         # apply normalization
         data_sample = self._normalize_data(data_sample, subject_id)
 
-        return torch.tensor(data_sample, dtype=torch.float32), torch.tensor(main_class, dtype=torch.long), torch.tensor(sub_class[0], dtype=torch.long)
+        return (torch.tensor(data_sample, dtype=torch.float32), torch.tensor(main_class, dtype=torch.long),
+                torch.tensor(sub_class[0], dtype=torch.long))
 
 
 def generate_dataset(data_path: str, output_path: str, activities: List[str] = None, fs: int = 100, window_size: float = 1.5,
