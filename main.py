@@ -83,7 +83,7 @@ if __name__ == '__main__':
             min_durations_dict = {0: 20, 1: 30, 2: 5}
 
             print("\nPerforming post processing")
-            optimize_post_processing(raw_data_path, label_map, fs=100, w_size=5.0, min_durations=min_durations_dict, threshold=0.85, nr_samples_mv=17)
+            optimize_post_processing(raw_data_path, label_map, fs=100, w_size=5.0, min_durations=min_durations_dict, threshold=0.95, nr_samples_mv=5)
 
 
 

@@ -159,7 +159,7 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
     }
 
     for metric, df in metric_dfs.items():
-        df.to_csv(os.path.join(metrics_output_path, f"COMMON_post_processing_{metric}_results.csv"), index=True)
+        df.to_csv(os.path.join(metrics_output_path, f"COMMON_post_processing_{metric}_macro_results.csv"), index=True)
 
     # if optimization was performed, save results
     if any(v is not None for v in subject_opt_mv_results.values()):
