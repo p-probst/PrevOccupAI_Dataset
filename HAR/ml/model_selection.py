@@ -267,6 +267,7 @@ def _tune_and_evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Serie
     # get the project path
     project_path = os.getcwd()
 
+    # TODO: this path needs to be updated according to the refactoring
     # generate a folder path to store the model and confusion matrix
     out_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{window_size_samples}_w_size"))
 

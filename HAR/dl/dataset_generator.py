@@ -30,10 +30,14 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from sklearn.preprocessing import LabelEncoder
+from torch.utils.data import DataLoader
+from sklearn.model_selection import GroupShuffleSplit
+import GPUtil
 
 # internal imports
-from constants import NPY, VALID_ACTIVITIES, VALID_SENSORS, ACC, GYR, MAG, MAIN_ACTIVITY_LABELS, \
-    SUB_ACTIVITIES_STAND_LABELS, SUB_ACTIVITIES_WALK_LABELS, SUB_ACTIVITY_LABELS, CLASS_INSTANCES_JSON, SUBJECT_STATS_JSON
+from constants import (NPY, VALID_ACTIVITIES, VALID_SENSORS, ACC, GYR, MAG, MAIN_ACTIVITY_LABELS,
+                       SUB_ACTIVITIES_STAND_LABELS, SUB_ACTIVITIES_WALK_LABELS, SUB_ACTIVITY_LABELS,
+                       CLASS_INSTANCES_JSON, SUBJECT_STATS_JSON, RANDOM_SEED)
 from feature_extractor import get_sliding_windows_indices, window_data
 from feature_extractor.feature_extractor import load_data
 from file_utils import create_dir, remove_file_duplicates, save_json_file, get_labels, validate_activity_input, \
@@ -95,7 +99,12 @@ class HARDataset(Dataset):
                       "subject": each data sample is normalized using the corresponding subject's statistics
                       "global": each data sample is normalized using global statistics calculated over the entire dataset
                       None (default): no normalization applied
-    :param balancing_type:
+    :param balancing_type: the data balancing type. Can be either:
+                         'main_classes': for balancing the data in such a way that each main class has the (almost) the
+                                       same amount of data. This ensures that each sub-class within the main class has
+                                       the same amount of instances.
+                         'sub_classes': for balancing that all sub-classes have the same amount of instances
+                         None: no balancing applied. Default: None
     """
 
     def __init__(self, data_path: str, subject_ids: List[str],
@@ -368,6 +377,74 @@ class HARDataset(Dataset):
                 torch.tensor(sub_class[0], dtype=torch.long))
 
 
+def get_train_test_data(dataset_path : str, batch_size: int, norm_method: str = None, norm_type: str = None,
+                        balancing_type: str = None) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
+    """
+    gets the train and test data loaders
+    :param dataset_path: the path to the dataset containing the data for training and testing
+    :param batch_size: the batch size to be used for the training dataset. The test batch size is set to 1.
+    :param norm_method: the normalization method. The following are available:
+                        "z-score": uses z-score normalization
+                        "min-max": uses min-max normalization
+    :param norm_type: the normalization type. The following are available
+                      "window": each data sample is normalized using its own statistics
+                      "subject": each data sample is normalized using the corresponding subject's statistics
+                      "global": each data sample is normalized using global statistics calculated over the entire dataset
+                      None (default): no normalization applied
+    :param balancing_type: the data balancing type. Can be either:
+                         'main_classes': for balancing the data in such a way that each main class has the (almost) the
+                                       same amount of data. This ensures that each sub-class within the main class has
+                                       the same amount of instances.
+                         'sub_classes': for balancing that all sub-classes have the same amount of instances
+                         None: no balancing applied. Default: None
+    :return: tuple containing the train and test data loaders
+    """
+
+    # load the subject ids
+    subject_IDs = list(load_json_file(os.path.join(dataset_path, CLASS_INSTANCES_JSON)).keys())
+
+    # split the subjects into train and test subjects
+    splitter = GroupShuffleSplit(test_size=0.2, n_splits=1, random_state=RANDOM_SEED)
+    train_idx, test_idx = next(splitter.split(subject_IDs, groups=subject_IDs))
+    subject_IDs_train = [subject_IDs[idx] for idx in train_idx]
+    subject_IDs_test = [subject_IDs[idx] for idx in test_idx]
+
+    # inform user on which subjects were chosen for training/test
+    print(f"train subjects: {subject_IDs_train}")
+    print(f"test subjects: {subject_IDs_test}")
+
+    # load the corresponding data
+    train_dataset = HARDataset(data_path=dataset_path,
+                               subject_ids=subject_IDs_train,
+                               norm_method=norm_method, norm_type=norm_type, balancing_type=balancing_type)
+
+    test_dataset = HARDataset(data_path=dataset_path,
+                              subject_ids=subject_IDs_test,
+                              norm_method=norm_method, norm_type=norm_type, balancing_type=balancing_type)
+
+    # inform user about number of samples for training and test
+    print(f"total samples train: {len(train_dataset)}")
+    print(f"total samples test: {len(test_dataset)}")
+
+    X, y_main, y_sub = train_dataset[0]
+    #
+    print("Sample shape:", X.shape)
+    # print("Main activity label:", y_main)
+    # print("Sub activity label:", y_sub)
+    #
+    X, y_main, y_sub = test_dataset[232]
+    #
+    print("Sample shape:", X.shape)
+    # print("Main activity label:", y_main)
+    # print("Sub activity label:", y_sub)
+
+    # pass the datasets to data loader
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+
+    return train_dataloader, test_dataloader
+
+
 def generate_dataset(data_path: str, output_path: str, activities: List[str] = None, fs: int = 100, window_size: float = 1.5,
                      overlap: float = 0.5, default_input_file_type: str = NPY) -> None:
     """
@@ -543,6 +620,45 @@ def generate_dataset(data_path: str, output_path: str, activities: List[str] = N
 
     print("finished DL dataset generation")
 
+
+# TODO: find a better place in the project for this
+def select_idle_gpu(max_load: float = 0.1, max_memory: float = 0.1) -> torch.device:
+    """
+    Selects an idle GPU that meets the usage thresholds.
+    Raises RuntimeError if none available, printing current GPU stats.
+
+    Parameters
+    ----------
+    max_load : float
+        Maximum allowed GPU load (0–1).
+    max_memory : float
+        Maximum allowed memory usage (0–1).
+
+    Returns
+    -------
+    torch.device
+        CUDA device for the selected GPU.
+    """
+    # Get available GPUs based on criteria
+    available = GPUtil.getAvailable(order='first', limit=1,
+                                     maxLoad=max_load, maxMemory=max_memory)
+
+    if available:
+        gpu_id = available[0]
+        print(f"INFO: Selected GPU {gpu_id}: {GPUtil.getGPUs()[gpu_id].name}")
+        return torch.device(f"cuda:{gpu_id}")
+    else:
+        # No free GPU found → print stats and raise error
+        gpus = GPUtil.getGPUs()
+        print("INFO: No idle GPU found. Current GPU usage:")
+        for gpu in gpus:
+            print(f"GPU {gpu.id} | {gpu.name} | "
+                  f"Load: {gpu.load*100:.1f}% | "
+                  f"Memory: {gpu.memoryUsed}/{gpu.memoryTotal} MB "
+                  f"({gpu.memoryUtil*100:.1f}%)")
+        raise RuntimeError(
+            "ERROR: All GPUs are currently in use. "
+            "Consider waiting or manually setting a gpu_id.")
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
