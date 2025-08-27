@@ -4,13 +4,16 @@ import torch.nn as nn
 import torch.optim as optim
 import pandas as pd
 
+import torch
+print(torch.cuda.is_available())
+
 from HAR.dl.train_test import plot_performance_history
 # internal imports
-from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY
+from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS
 from HAR.dl import generate_dataset, get_train_test_data, select_idle_gpu, run_model_training
 from HAR.dl import DL_DATASET
 from HAR.dl import HARLstm
-from file_utils import create_dir, load_json_file
+from file_utils import create_dir
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # constants
@@ -20,7 +23,7 @@ TRAIN_TEST_MODEL = True
 
 
 # definition of folder_path
-OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
+OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here
@@ -63,7 +66,7 @@ if __name__ == '__main__':
         # set model variables and parameters
         # TODO: implement strategy to select only specific sensors
         har_model = HARLstm(num_features=13, hidden_size=64, num_layers=1,
-                            num_classes=len(MAIN_ACTIVITY_LABELS), dropout=0.5)
+                            num_classes=len(MAIN_ACTIVITY_LABELS), dropout=0.3)
 
         # get the model name
         model_name = har_model.__class__.__name__
@@ -79,7 +82,7 @@ if __name__ == '__main__':
         performance_history = run_model_training(model=har_model, model_save_path=model_save_path,
                                                  train_dataloader=train_dataloader, test_dataloader=test_dataloader,
                                                  criterion=criterion, optimizer=optimizer, cuda_device=cuda_device,
-                                                 num_epochs=num_epochs)
+                                                 num_epochs=num_epochs, patience=10)
 
         # plot the performance history
         plot_performance_history(performance_dict=performance_history, model_name=model_name, save_path=model_save_path)

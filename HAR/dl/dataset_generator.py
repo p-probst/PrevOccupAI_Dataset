@@ -98,6 +98,7 @@ class HARDataset(Dataset):
     :param norm_method: the normalization method. The following are available:
                         "z-score": uses z-score normalization
                         "min-max": uses min-max normalization
+                        None (default): no normalization applied
     :param norm_type: the normalization type. The following are available
                       "window": each data sample is normalized using its own statistics
                       "subject": each data sample is normalized using the corresponding subject's statistics
@@ -454,6 +455,7 @@ def get_train_test_data(dataset_path : str, batch_size: int,
     :param norm_method: the normalization method. The following are available:
                         "z-score": uses z-score normalization
                         "min-max": uses min-max normalization
+                        None (default): no normalization applied
     :param norm_type: the normalization type. The following are available
                       "window": each data sample is normalized using its own statistics
                       "subject": each data sample is normalized using the corresponding subject's statistics
@@ -496,15 +498,15 @@ def get_train_test_data(dataset_path : str, batch_size: int,
     print(f"total samples train: {len(train_dataset)}")
     print(f"total samples test: {len(test_dataset)}")
 
-    X, y_main, y_sub = train_dataset[0]
+    # X, y_main, y_sub = train_dataset[0]
     #
-    print("Sample shape:", X.shape)
+    # print("Sample shape:", X.shape)
     # print("Main activity label:", y_main)
     # print("Sub activity label:", y_sub)
     #
-    X, y_main, y_sub = test_dataset[232]
+    # X, y_main, y_sub = test_dataset[232]
     #
-    print("Sample shape:", X.shape)
+    # print("Sample shape:", X.shape)
     # print("Main activity label:", y_main)
     # print("Sub activity label:", y_sub)
 
@@ -874,7 +876,6 @@ def _calc_subject_stats(subject_data: List[np.array], subject_id: str) -> Dict[s
     subject_maxs = np.max(subject_data, axis=0).tolist()
 
     # total number of samples (over all data)
-    print(np.shape(subject_data))
     sub_samples = subject_data.shape[0]
 
     return {subject_id: {N_SAMPLES: sub_samples, SENSOR_MEAN: subject_means,
