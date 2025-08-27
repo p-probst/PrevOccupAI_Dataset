@@ -12,6 +12,7 @@ generate_dataset(...): Generates dataset for Deep Learning
 
 ------------------
 [Private]
+_get_num_channels_sample(...): Gets the number of channels contained in a sample.
 _generate_outfolder(...): Generates the folder for storing the dataset
 _save_windowed_data(...): Saves the windowed data into individual .npy files using the window number in the naming of the file.
 _calc_subject_stats(...): Calculates a set of statistics from the data contained in subject_data.
@@ -91,6 +92,9 @@ class HARDataset(Dataset):
 
     :param data_path: the path to the dataset
     :param subject_ids: the IDs of the subject for which the data should be loaded
+    :param load_sensors: list of sensors (as strings) indicating which sensors should be loaded. Default: None (all sensors are loaded)
+    :param sensor_columns: list containing the name of each sensor contained in the dataset.
+                           (e.g. [x_ACC, y_ACC, z_ACC, x_GYR, ...]. When using generate_segmented_dataset these are stored in "numpy_columns.json".
     :param norm_method: the normalization method. The following are available:
                         "z-score": uses z-score normalization
                         "min-max": uses min-max normalization
@@ -108,6 +112,7 @@ class HARDataset(Dataset):
     """
 
     def __init__(self, data_path: str, subject_ids: List[str],
+                 load_sensors: List[str] = None, sensor_columns: List[str] = None,
                  norm_method: NormMethod = None, norm_type: NormalizationType = None,
                  balancing_type: BalancingType = None):
 
@@ -116,6 +121,9 @@ class HARDataset(Dataset):
         if not os.path.isdir(data_path):
             raise ValueError("The data path you provided is not valid."
                              f"\nProvided data path: {data_path}")
+
+        # get the number of channels a sample has
+        num_channels = _get_num_channels_sample(data_path)
 
         # (2) check subject_ids
         # collect all available subject IDs in the dataset folder
@@ -132,6 +140,27 @@ class HARDataset(Dataset):
         if unknown_subjects:
             print(f"[WARNING]: The following subjects were not found in the dataset: {list(unknown_subjects)}"
                   "\nThese subjects are going to be ignored for model training/testing")
+
+        # (3) check load_sensors and
+        # (a) load_sensors provided but no sensor_columns
+        if load_sensors and not sensor_columns:
+            raise ValueError(f"load_sensors was provided, but no sensor_columns were provided."
+                             f"\nWhen loading specific sensors, the sensor_columns (i.e., the name of each column and their corresponding order) need to be defined."
+                             f"\nExample (assuming your data set has 3-axis accelerometer and 3-axis gyroscope: sensor_columns = [\"x_ACC\", \"y_ACC\", \"z_ACC\", \"x_GYR\", \"y_GYR\", \"z_GYR\"]")
+
+        # (b) validity of load_sensors input
+        invalid_sensors = set(load_sensors) - set(VALID_SENSORS)
+        if invalid_sensors:
+            raise ValueError(f"Invalid sensors provided: {invalid_sensors}"
+                             f"\nPlease choose from the following options: {VALID_SENSORS}")
+
+        # (c) validity of sensor_columns (just matching the dimensionality)
+        if sensor_columns and num_channels != len(sensor_columns):
+
+            raise ValueError(
+                f"The number of passed sensor_columns does not match the number of channels in the data contained in the dataset."
+                f"Please ensure that these match."
+                f"\nlen(sensor_columns): {len(sensor_columns)} | num_channels data: {num_channels}")
 
         # (3) check norm_method and norm_type
         # (a) norm_method provided but no norm_type
@@ -184,11 +213,40 @@ class HARDataset(Dataset):
             self.files = [file_name for file_name in os.listdir(data_path)
                           if file_name.endswith(".npy") and file_name.split('_')[0] in subject_ids]
 
+        # check whether there has been any data collcted
+        if len(self.files) == 0:
+            raise ValueError(
+                f"The dataset does not contain any \".npy\" files. Please check the correctness of the the provided data path"
+                f"\nProvided data path: {data_path}")
+
+
         # load the statistics in case a norm_type was chosen
         if norm_type in [SUBJECT_NORM, GLOBAL_NORM]:
 
             # load the json-file containing the statistics
             self.stats = load_json_file(os.path.join(data_path, SUBJECT_STATS_JSON))
+
+
+        # precompute indices of selected sensor channels
+        if load_sensors is None:
+
+            # use all channels
+            self.selected_channels = list(range(0, num_channels))
+
+        else:
+
+            selected_channels = []
+
+            for sensor in load_sensors:
+
+                selected_channels.extend([channel for channel, sensor_name in enumerate(sensor_columns) if sensor in sensor_name])
+
+            # get the channels corresponding to the passed sensors
+            # and sort them in ascending order (in case the user gives a order different from the sensor_columns)
+            self.selected_channels = sorted(selected_channels)
+
+        print(f"selected channels: {self.selected_channels}")
+
 
     def __len__(self):
 
@@ -197,7 +255,7 @@ class HARDataset(Dataset):
     def _balance_data(self):
         """
         balances the data according to the given balancing type.
-        :return:
+        :return: list of file paths of the balanced dataset
         """
 
         # load class_instances json
@@ -373,16 +431,26 @@ class HARDataset(Dataset):
         # apply normalization
         data_sample = self._normalize_data(data_sample, subject_id)
 
+        # select only the request channels
+        data_sample = data_sample[:, self.selected_channels]
+
         return (torch.tensor(data_sample, dtype=torch.float32), torch.tensor(main_class, dtype=torch.long),
                 torch.tensor(sub_class[0], dtype=torch.long))
 
 
-def get_train_test_data(dataset_path : str, batch_size: int, norm_method: str = None, norm_type: str = None,
+def get_train_test_data(dataset_path : str, batch_size: int,
+                        load_sensors: List[str] = None, sensor_columns: List[str] = None,
+                        norm_method: str = None, norm_type: str = None,
                         balancing_type: str = None) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
     """
     gets the train and test data loaders
     :param dataset_path: the path to the dataset containing the data for training and testing
     :param batch_size: the batch size to be used for the training dataset. The test batch size is set to 1.
+    :param load_sensors: list of sensors (as strings) indicating which sensors should be loaded. Default: None (all sensors are loaded)
+    :param sensor_columns: list containing the name of each sensor contained in the dataset.
+                           (e.g. [x_ACC, y_ACC, z_ACC, x_GYR, ...].
+                           When using generate_segmented_dataset these are stored in "numpy_columns.json". This parameter
+                           has to be provided when load_sensors is provided. Default: None
     :param norm_method: the normalization method. The following are available:
                         "z-score": uses z-score normalization
                         "min-max": uses min-max normalization
@@ -416,10 +484,12 @@ def get_train_test_data(dataset_path : str, batch_size: int, norm_method: str = 
     # load the corresponding data
     train_dataset = HARDataset(data_path=dataset_path,
                                subject_ids=subject_IDs_train,
+                               load_sensors=load_sensors, sensor_columns=sensor_columns,
                                norm_method=norm_method, norm_type=norm_type, balancing_type=balancing_type)
 
     test_dataset = HARDataset(data_path=dataset_path,
                               subject_ids=subject_IDs_test,
+                              load_sensors=load_sensors, sensor_columns=sensor_columns,
                               norm_method=norm_method, norm_type=norm_type, balancing_type=balancing_type)
 
     # inform user about number of samples for training and test
@@ -663,6 +733,36 @@ def select_idle_gpu(max_load: float = 0.1, max_memory: float = 0.1) -> torch.dev
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
+def _get_num_channels_sample(data_path: str) -> int:
+    """
+    gets the number of channels contained in a sample. Needed for checking input validity.
+    It is assumed that all samples in the dataset have the same shape [num_timesteps, num_channels]
+    :param data_path: the path to the dataset.
+    :return: the number of channels in a sample of the dataset.
+    """
+
+    first_file = None
+    # check dimensionality of the data windows contained in the dataset (load only one sample)
+    with os.scandir(data_path) as file_it:
+        for entry in file_it:
+            if entry.is_file() and entry.name.endswith('.npy'):
+                first_file = entry.path
+
+    if first_file:
+
+        # load the test samples
+        test_sample = np.load(first_file)
+
+        # get the number of channels
+        num_channels = test_sample.shape[1]
+
+        return num_channels
+
+    else:
+        raise ValueError(
+            f"The dataset does not contain any \".npy\" files. Please check the correctness of the the provided data path"
+            f"\nProvided data path: {data_path}")
+
 def _generate_outfolder(features_data_path: str,  window_size_samples: float) -> str:
     """
     Generates the folder for storing the generated dataset

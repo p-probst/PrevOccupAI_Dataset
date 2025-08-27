@@ -6,11 +6,11 @@ import pandas as pd
 
 from HAR.dl.train_test import plot_performance_history
 # internal imports
-from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS
+from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY
 from HAR.dl import generate_dataset, get_train_test_data, select_idle_gpu, run_model_training
 from HAR.dl import DL_DATASET
 from HAR.dl import HARLstm
-from file_utils import create_dir
+from file_utils import create_dir, load_json_file
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # constants
@@ -43,6 +43,11 @@ if __name__ == '__main__':
         dataset_path = os.path.join(OUTPUT_FOLDER_PATH, DL_DATASET, f'w_{window_size_samples}')
         model_save_path = create_dir(os.getcwd(), os.path.join("HAR", "dl", f"trained_models_w_size_{window_size_samples}"))
 
+        # define path json file containing the sensor columns
+        numpy_columns_file = os.path.join(OUTPUT_FOLDER_PATH, SEGMENTED_DATA_FOLDER, SENSOR_COLS_JSON)
+        # get sensor_columns
+        sensor_columns = load_json_file(numpy_columns_file)[LOADED_SENSORS_KEY]
+
         # set number of epochs
         num_epochs = 5
 
@@ -50,8 +55,10 @@ if __name__ == '__main__':
         cuda_device = select_idle_gpu()
 
         print("training/testing model on generated dataset")
-        train_dataloader, test_dataloader = get_train_test_data(dataset_path, batch_size=64, norm_method="z-score",
-                                                                norm_type="global", balancing_type='main_classes')
+        train_dataloader, test_dataloader = get_train_test_data(dataset_path, batch_size=64,
+                                                                load_sensors=['ACC', 'MAG', 'GYR'], sensor_columns=sensor_columns,
+                                                                norm_method="z-score", norm_type="global",
+                                                                balancing_type='main_classes')
 
         # set model variables and parameters
         # TODO: implement strategy to select only specific sensors

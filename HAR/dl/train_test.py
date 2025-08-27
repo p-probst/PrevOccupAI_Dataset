@@ -4,7 +4,10 @@ Functions for handling training and test steps
 Available Functions
 -------------------
 [Public]
-
+run_model_training(...): training/test loop to train the model and evaluate its performance.
+train_step(...): performs the model training for one epoch.
+test_step(...): performs model testing for one epoch (no gradient updates)
+plot_performance_history(...): plots the performance history (loss and accuracy) over the epochs.
 ------------------
 [Private]
 None
