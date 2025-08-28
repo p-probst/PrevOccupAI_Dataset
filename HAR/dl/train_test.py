@@ -81,6 +81,7 @@ def run_model_training(
         train_loss, train_acc = train_step(model, train_dataloader, criterion, optimizer, cuda_device)
 
         # perform test/validation step
+        print("Running test step")
         val_loss, val_acc = test_step(model, test_dataloader, criterion, cuda_device)
 
         # store metrics
@@ -147,7 +148,7 @@ def train_step(model: nn.Module, data_loader: torch.utils.data.DataLoader, crite
     total_num_samples = 0
 
     # cycle over the batches contained in data loader
-    for X_batch, y_main_batch, y_sub_batch in tqdm(data_loader, desc="running batches"):
+    for X_batch, y_main_batch, y_sub_batch in tqdm(data_loader, desc="running training batches"):
 
         # move batch to cuda device
         X_batch = X_batch.to(cuda_device)
@@ -211,7 +212,7 @@ def test_step(model: nn.Module, data_loader: torch.utils.data.DataLoader,
     with torch.no_grad():
 
         # cycle over the batch
-        for X_batch, y_main_batch, y_sub_batch in data_loader:
+        for X_batch, y_main_batch, y_sub_batch in tqdm(data_loader, "running test batch(es)"):
 
             # move batch to cuda device
             X_batch = X_batch.to(cuda_device)
