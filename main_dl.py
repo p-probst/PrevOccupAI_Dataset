@@ -9,11 +9,11 @@ print(torch.cuda.is_available())
 
 from HAR.dl.train_test import plot_performance_history
 # internal imports
-from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS
+from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY
 from HAR.dl import generate_dataset, get_train_test_data, select_idle_gpu, run_model_training
 from HAR.dl import DL_DATASET
 from HAR.dl import HARLstm
-from file_utils import create_dir
+from file_utils import create_dir, load_json_file
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # constants
@@ -37,12 +37,12 @@ if __name__ == '__main__':
         # path to segmented data folder
         segmented_data_path = os.path.join(OUTPUT_FOLDER_PATH, SEGMENTED_DATA_FOLDER)
 
-        generate_dataset(segmented_data_path, OUTPUT_FOLDER_PATH, window_size=5, default_input_file_type='.npy')
+        generate_dataset(segmented_data_path, OUTPUT_FOLDER_PATH, window_size=0.5, default_input_file_type='.npy')
 
     if TRAIN_TEST_MODEL:
 
         # set window size, dataset path, and model save path
-        window_size_samples = 500
+        window_size_samples = 50
         dataset_path = os.path.join(OUTPUT_FOLDER_PATH, DL_DATASET, f'w_{window_size_samples}')
         model_save_path = create_dir(os.getcwd(), os.path.join("HAR", "dl", f"trained_models_w_size_{window_size_samples}"))
 
@@ -52,24 +52,25 @@ if __name__ == '__main__':
         sensor_columns = load_json_file(numpy_columns_file)[LOADED_SENSORS_KEY]
 
         # set number of epochs
-        num_epochs = 5
+        num_epochs = 20
+        dropout = 0.5
 
         # set the GPU
         cuda_device = select_idle_gpu()
 
         print("training/testing model on generated dataset")
-        train_dataloader, test_dataloader = get_train_test_data(dataset_path, batch_size=64,
-                                                                load_sensors=['ACC', 'MAG', 'GYR'], sensor_columns=sensor_columns,
-                                                                norm_method="z-score", norm_type="global",
-                                                                balancing_type='main_classes')
+        train_dataloader, test_dataloader, num_channels = get_train_test_data(dataset_path, batch_size=128,
+                                                          load_sensors=['ACC', 'GYR', 'MAG'], sensor_columns=sensor_columns,
+                                                          norm_method="z-score", norm_type="subject",
+                                                          balancing_type='main_classes')
 
         # set model variables and parameters
         # TODO: implement strategy to select only specific sensors
-        har_model = HARLstm(num_features=13, hidden_size=64, num_layers=1,
-                            num_classes=len(MAIN_ACTIVITY_LABELS), dropout=0.3)
+        har_model = HARLstm(num_features=num_channels, hidden_size=128, num_layers=1,
+                            num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
         # get the model name
-        model_name = har_model.__class__.__name__
+        model_name = f"{har_model.__class__.__name__}_hs{har_model.hidden_size}_nl{har_model.num_layers}_do03"
 
         # put model on cuda device
         har_model.to(cuda_device)

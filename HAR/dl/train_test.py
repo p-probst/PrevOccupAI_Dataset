@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import os
+from tqdm import tqdm
 
 # internal imports
 from constants import MAIN_ACTIVITY_LABELS
@@ -76,6 +77,7 @@ def run_model_training(
         print(f"Epoch: {epoch}/{num_epochs}")
 
         # perform training step
+        print("Running train step")
         train_loss, train_acc = train_step(model, train_dataloader, criterion, optimizer, cuda_device)
 
         # perform test/validation step
@@ -98,11 +100,11 @@ def run_model_training(
             epochs_no_improve = 0
 
             # obtain model name
-            model_name = f"{model.__class__.__name__}.pt"
+            model_name = f"{model.__class__.__name__}_hs{model.hidden_size}_nl{model.num_layers}.pt"
 
             # store best model params
             torch.save(model.state_dict(), os.path.join(model_save_path, model_name))
-            print(f"INFO: New best model obtained at epoch {epoch} (val. acc: {best_val_acc:.4f}")
+            print(f"INFO: New best model obtained at epoch {epoch} (val. acc: {best_val_acc:.4f})")
 
         else: # no improvement
             epochs_no_improve += 1
@@ -145,7 +147,7 @@ def train_step(model: nn.Module, data_loader: torch.utils.data.DataLoader, crite
     total_num_samples = 0
 
     # cycle over the batches contained in data loader
-    for X_batch, y_main_batch, y_sub_batch in data_loader:
+    for X_batch, y_main_batch, y_sub_batch in tqdm(data_loader, desc="running batches"):
 
         # move batch to cuda device
         X_batch = X_batch.to(cuda_device)

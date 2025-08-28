@@ -246,7 +246,7 @@ class HARDataset(Dataset):
             # and sort them in ascending order (in case the user gives a order different from the sensor_columns)
             self.selected_channels = sorted(selected_channels)
 
-        print(f"selected channels: {self.selected_channels}")
+        # print(f"selected channels: {self.selected_channels}")
 
 
     def __len__(self):
@@ -442,7 +442,7 @@ class HARDataset(Dataset):
 def get_train_test_data(dataset_path : str, batch_size: int,
                         load_sensors: List[str] = None, sensor_columns: List[str] = None,
                         norm_method: str = None, norm_type: str = None,
-                        balancing_type: str = None) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
+                        balancing_type: str = None) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, int]:
     """
     gets the train and test data loaders
     :param dataset_path: the path to the dataset containing the data for training and testing
@@ -498,6 +498,10 @@ def get_train_test_data(dataset_path : str, batch_size: int,
     print(f"total samples train: {len(train_dataset)}")
     print(f"total samples test: {len(test_dataset)}")
 
+    # get the sample shape to obtain number of channels/features
+    X, _, _ = train_dataset[0]
+    num_channels = X.shape[-1]
+
     # X, y_main, y_sub = train_dataset[0]
     #
     # print("Sample shape:", X.shape)
@@ -514,7 +518,7 @@ def get_train_test_data(dataset_path : str, batch_size: int,
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-    return train_dataloader, test_dataloader
+    return train_dataloader, test_dataloader, num_channels
 
 
 def generate_dataset(data_path: str, output_path: str, activities: List[str] = None, fs: int = 100, window_size: float = 1.5,
