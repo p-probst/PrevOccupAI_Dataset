@@ -62,6 +62,14 @@ class HARLstm(nn.Module):
         self.fc_layer = nn.Linear(hidden_size, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        forward pass
+        :param x: input batch of size [batch_size, time_steps, sequence_length, num_channels]
+        :return:
+        """
+
+        # reshape input tensor to shape [batch_size, time_steps, sequence_length * num_channels]
+        x = x.reshape(x.size(0), x.size(1), -1)
 
         # pass the inputs through the LSTM
         # shape out: [batch_size, time_steps, hidden_size]

@@ -23,7 +23,7 @@ TRAIN_TEST_MODEL = True
 
 
 # definition of folder_path
-OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
+OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here

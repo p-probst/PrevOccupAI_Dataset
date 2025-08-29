@@ -91,7 +91,8 @@ class HARDataset(Dataset):
     The HARDatasets handles label retrieval and normalization for each window according to the provided normalization type.
 
     :param data_path: the path to the dataset
-    :param subject_ids: the IDs of the subject for which the data should be loaded
+    :param subject_ids: the IDs of the subject for which the data should be loaded.
+    :param seq_len: the size of the window to window the sample into sub-sequences.
     :param load_sensors: list of sensors (as strings) indicating which sensors should be loaded. Default: None (all sensors are loaded)
     :param sensor_columns: list containing the name of each sensor contained in the dataset.
                            (e.g. [x_ACC, y_ACC, z_ACC, x_GYR, ...]. When using generate_segmented_dataset these are stored in "numpy_columns.json".
@@ -113,7 +114,7 @@ class HARDataset(Dataset):
     """
 
     def __init__(self, data_path: str, subject_ids: List[str],
-                 load_sensors: List[str] = None, sensor_columns: List[str] = None,
+                 load_sensors: List[str] = None, sensor_columns: List[str] = None, seq_len: int = 1,
                  norm_method: NormMethod = None, norm_type: NormalizationType = None,
                  balancing_type: BalancingType = None):
 
@@ -124,7 +125,7 @@ class HARDataset(Dataset):
                              f"\nProvided data path: {data_path}")
 
         # get the number of channels a sample has
-        num_channels = _get_num_channels_sample(data_path)
+        num_timesteps, num_channels = _get_sample_shape(data_path)
 
         # (2) check subject_ids
         # collect all available subject IDs in the dataset folder
@@ -142,7 +143,7 @@ class HARDataset(Dataset):
             print(f"[WARNING]: The following subjects were not found in the dataset: {list(unknown_subjects)}"
                   "\nThese subjects are going to be ignored for model training/testing")
 
-        # (3) check load_sensors and
+        # (3) check load_sensors and sensor_columns
         # (a) load_sensors provided but no sensor_columns
         if load_sensors and not sensor_columns:
             raise ValueError(f"load_sensors was provided, but no sensor_columns were provided."
@@ -163,7 +164,16 @@ class HARDataset(Dataset):
                 f"Please ensure that these match."
                 f"\nlen(sensor_columns): {len(sensor_columns)} | num_channels data: {num_channels}")
 
-        # (3) check norm_method and norm_type
+        # (4) check seq_len (seq_len has to be a factor of num_timesteps to obtain full windowing)
+        if num_timesteps // seq_len != 0:
+
+            # compute valid factors
+            factors = [factor for factor in range(1, num_timesteps) if num_timesteps % factor == 0]
+            raise ValueError(
+                f"Invalid window_size={seq_len}. "
+                f"The samples number of time steps ({num_timesteps}) can only be divided by these factors: {factors}")
+
+        # (5) check norm_method and norm_type
         # (a) norm_method provided but no norm_type
         if norm_method and not norm_type:
             raise ValueError(f"norm_method was provided ({norm_method}), but no norm_type was given. "
@@ -186,7 +196,7 @@ class HARDataset(Dataset):
         if norm_type and norm_type not in NORM_TYPES:
             raise ValueError(f"Invalid norm_type: {norm_type}. Must be one of: {NORM_TYPES}.")
 
-        # (4) check balancing_type
+        # (6) check balancing_type
         if balancing_type and balancing_type not in [MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING]:
             raise ValueError(f"Invalid balancing_type: {balancing_type}. "
                              f"Must be one of: {[MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING]}")
@@ -195,6 +205,7 @@ class HARDataset(Dataset):
         # init class variables
         self.data_path = data_path
         self.subject_ids = subject_ids
+        self.seq_len = seq_len
         self.norm_method = norm_method
         self.norm_type = norm_type
         self.balancing_type = balancing_type
@@ -435,6 +446,10 @@ class HARDataset(Dataset):
         # select only the request channels
         data_sample = data_sample[:, self.selected_channels]
 
+        # window data into subsequences according to the provided seq_len
+        num_windows = data_sample.shape[0] // self.seq_len
+        data_sample = data_sample.reshape(num_windows, self.seq_len, data_sample.shape[-1])
+
         return (torch.tensor(data_sample, dtype=torch.float32), torch.tensor(main_class, dtype=torch.long),
                 torch.tensor(sub_class[0], dtype=torch.long))
 
@@ -500,7 +515,8 @@ def get_train_test_data(dataset_path : str, batch_size: int,
 
     # get the sample shape to obtain number of channels/features
     X, _, _ = train_dataset[0]
-    num_channels = X.shape[-1]
+    print("Sample shape:", X.shape)
+    # num_channels = X.shape[-1]
 
     # X, y_main, y_sub = train_dataset[0]
     #
@@ -739,7 +755,7 @@ def select_idle_gpu(max_load: float = 0.1, max_memory: float = 0.1) -> torch.dev
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def _get_num_channels_sample(data_path: str) -> int:
+def _get_sample_shape(data_path: str) -> int:
     """
     gets the number of channels contained in a sample. Needed for checking input validity.
     It is assumed that all samples in the dataset have the same shape [num_timesteps, num_channels]
@@ -759,10 +775,13 @@ def _get_num_channels_sample(data_path: str) -> int:
         # load the test samples
         test_sample = np.load(first_file)
 
+        # get the number of timesteps
+        num_timesteps = test_sample.shape[0]
+
         # get the number of channels
         num_channels = test_sample.shape[1]
 
-        return num_channels
+        return num_timesteps, num_channels
 
     else:
         raise ValueError(
