@@ -77,11 +77,9 @@ def run_model_training(
         print(f"Epoch: {epoch}/{num_epochs}")
 
         # perform training step
-        print("Running train step")
         train_loss, train_acc = train_step(model, train_dataloader, criterion, optimizer, cuda_device)
 
         # perform test/validation step
-        print("Running test step")
         val_loss, val_acc = test_step(model, test_dataloader, criterion, cuda_device)
 
         # store metrics
@@ -147,6 +145,9 @@ def train_step(model: nn.Module, data_loader: torch.utils.data.DataLoader, crite
     running_correct_preds = 0
     total_num_samples = 0
 
+    # collect y_batch to check correctness
+    m_classes = set()
+
     # cycle over the batches contained in data loader
     for X_batch, y_main_batch, y_sub_batch in tqdm(data_loader, desc="running training batches"):
 
@@ -159,6 +160,9 @@ def train_step(model: nn.Module, data_loader: torch.utils.data.DataLoader, crite
 
         else:
             y_batch = y_sub_batch.to(cuda_device)
+
+        # add y_batch to set
+        m_classes.update(y_batch.tolist())
 
         # get batch size and track the total number of samples
         batch_size = X_batch.size(0)
@@ -186,6 +190,8 @@ def train_step(model: nn.Module, data_loader: torch.utils.data.DataLoader, crite
     epoch_loss = running_loss / total_num_samples
     epoch_accuracy = running_correct_preds / total_num_samples
 
+    print(f"Seen classes during training: {m_classes}")
+
     return epoch_loss, epoch_accuracy
 
 
@@ -208,6 +214,9 @@ def test_step(model: nn.Module, data_loader: torch.utils.data.DataLoader,
     running_correct_preds = 0
     total_num_samples = 0
 
+    # collect y_batch to check correctness
+    m_classes = set()
+
     # turn off gradient computation
     with torch.no_grad():
 
@@ -223,6 +232,9 @@ def test_step(model: nn.Module, data_loader: torch.utils.data.DataLoader,
 
             else:
                 y_batch = y_sub_batch.to(cuda_device)
+
+            # add y_batch to set
+            m_classes.update(y_batch.tolist())
 
             # get batch size and track the total number of samples
             batch_size = X_batch.size(0)
@@ -242,6 +254,8 @@ def test_step(model: nn.Module, data_loader: torch.utils.data.DataLoader,
     # compute epoch averages
     epoch_loss = running_loss / total_num_samples
     epoch_accuracy = running_correct_preds / total_num_samples
+
+    print(f"Seen classes during test: {m_classes}")
 
     return epoch_loss, epoch_accuracy
 
