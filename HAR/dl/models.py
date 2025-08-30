@@ -44,6 +44,7 @@ class HARLstm(nn.Module):
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.num_classes = num_classes
+        self.dropout = dropout
 
         # model architecture
         # (1) LSTM layer

@@ -1,18 +1,21 @@
-
 import os
+import argparse
+from typing import List
+
+import torch
 import torch.nn as nn
 import torch.optim as optim
 import pandas as pd
 
-import torch
-print(torch.cuda.is_available())
+print(f"CUDA available: {torch.cuda.is_available()}")
 
-from HAR.dl.train_test import plot_performance_history
+
 # internal imports
-from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY
-from HAR.dl import generate_dataset, get_train_test_data, select_idle_gpu, run_model_training
+from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY, VALID_SENSORS, RANDOM_SEED
+from HAR.dl import generate_dataset, get_train_test_data, run_model_training, select_idle_gpu, configure_seed
 from HAR.dl import DL_DATASET
 from HAR.dl import HARLstm
+from HAR.dl.train_test import plot_performance_history
 from file_utils import create_dir, load_json_file
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -21,16 +24,52 @@ from file_utils import create_dir, load_json_file
 GENERATE_DATASET = False
 TRAIN_TEST_MODEL = True
 
-
 # definition of folder_path
-OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
+OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
+
+# ------------------------------------------------------------------------------------------------------------------- #
+# argument parsing
+# ------------------------------------------------------------------------------------------------------------------- #
+parser = argparse.ArgumentParser()
+
+# (1) paths
+parser.add_argument('--data_path', default=OUTPUT_FOLDER_PATH, help="Path to dataset.")
+
+# (2) dataset
+parser.add_argument('--fs', default=100, type=int, help="The sampling frequency used during data acquisition.")
+parser.add_argument('--window_size_s', default=5, type=float, help="The window size (in seconds) for sequence windowing. Can be either int or float.")
+parser.add_argument('--seq_len', default=10, type=int, help="The window size (in samples) for sub-sequencing input samples. Should be a factor of window_size (in samples).")
+parser.add_argument('--load_sensors', nargs="+", default=None, help="The sensor to be loaded (as List[str]), e.g., [\"ACC\", \"GYR\"].")
+parser.add_argument('--norm_method', default='z-score', choices=['z-score', 'min-max', None], help="The normalization method (as str) used.")
+parser.add_argument('--norm_type', default='subject', choices=['global', 'subject', None], help="The type of normalization (as str).")
+parser.add_argument('--balancing_type', default='main_classes', choices=['main_classes', 'sub_classes', None], help="The balancing type (as str).")
+
+# (3) model related parameters
+parser.add_argument('--num_epochs', default=40, type=int, help="The number of epochs used in model training.")
+parser.add_argument('--batch_size', default=64, type=int, help="The batch size used in model training.")
+parser.add_argument('--hidden_size', default=128, type=int, help="The hidden size used in RNN models (LSTM, GRU).")
+parser.add_argument('--num_layers', default=1, type=int, help="The number of layers used in RNN models (LSTM, GRU).")
+parser.add_argument('--dropout', default=0.3, type=float, help="The dropout rate used during model training.")
+parser.add_argument('--lr', default=1e-4, type=float, help="The learning rate used during model training")
+
+# parse the provided arguments
+parsed_args = parser.parse_args()
+
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here
 # ------------------------------------------------------------------------------------------------------------------- #
 if __name__ == '__main__':
 
-    if GENERATE_DATASET:
+    # obtain window size and sampling frequency
+    window_size = parsed_args.window_size_s
+    fs = parsed_args.fs
+
+    # get window size in samples
+    window_size_samples = int(window_size * fs)
+
+    # check whether a dataset for the provided window_size has already been generated
+    if not os.path.exists(os.path.join(OUTPUT_FOLDER_PATH, DL_DATASET, f"w_{window_size_samples}")):
 
         print("generating dataset for deep learning")
 
@@ -41,35 +80,56 @@ if __name__ == '__main__':
 
     if TRAIN_TEST_MODEL:
 
-        # set window size, dataset path, and model save path
-        window_size_samples = 100
+        # set dataset related parameters
         dataset_path = os.path.join(OUTPUT_FOLDER_PATH, DL_DATASET, f'w_{window_size_samples}')
-        load_sensors = ["ACC", "GYR"]
+        load_sensors = parsed_args.load_sensors
+        seq_len = parsed_args.seq_len
+        norm_method = parsed_args.norm_method
+        norm_type = parsed_args.norm_type
+        balancing_type = parsed_args.balancing_type
+
+        # check whether None was passed for load_sensors
+        if not load_sensors: load_sensors = VALID_SENSORS
+
+        # set model related parameters
+        num_epochs = parsed_args.num_epochs
+        batch_size = parsed_args.batch_size
+        hidden_size = parsed_args.hidden_size
+        num_layers = parsed_args.num_layers
+        dropout = parsed_args.dropout
+        lr = parsed_args.lr
+
+        # set the GPU
+        cuda_device = select_idle_gpu()
+
+        # set the seed for reproducibility
+        configure_seed(RANDOM_SEED)
 
         # define path json file containing the sensor columns
         numpy_columns_file = os.path.join(OUTPUT_FOLDER_PATH, SEGMENTED_DATA_FOLDER, SENSOR_COLS_JSON)
         # get sensor_columns
         sensor_columns = load_json_file(numpy_columns_file)[LOADED_SENSORS_KEY]
 
-        # set number of epochs
-        num_epochs = 30
-        dropout = 0.3
-
-        # set the GPU
-        cuda_device = select_idle_gpu()
+        # define path to save model
+        project_path = os.path.dirname(os.path.abspath(__file__))
+        model_save_path = create_dir(project_path,
+                                     os.path.join("HAR", "dl",
+                                                  f"trained_models_w_size_{window_size_samples}_seq_len{seq_len}",
+                                                  f"nm_{norm_type}", f"nt_{norm_method}",
+                                                  "_".join(load_sensors)))
 
         print("training/testing model on generated dataset")
-        train_dataloader, test_dataloader, num_channels = get_train_test_data(dataset_path, batch_size=64,
+        train_dataloader, test_dataloader, num_channels = get_train_test_data(dataset_path, batch_size=batch_size,
                                                           load_sensors=load_sensors, sensor_columns=sensor_columns,
-                                                          norm_method="z-score", norm_type="subject",
-                                                          balancing_type='main_classes')
+                                                          seq_len=seq_len,
+                                                          norm_method=norm_method, norm_type=norm_type,
+                                                          balancing_type=balancing_type)
 
         # set model variables and parameters
-        # TODO: implement strategy to select only specific sensors
-        har_model = HARLstm(num_features=num_channels, hidden_size=128, num_layers=2,
+        har_model = HARLstm(num_features=int(num_channels*seq_len), hidden_size=hidden_size, num_layers=num_layers,
                             num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
-        # get the model name
+        # generate model name
         model_name = f"{har_model.__class__.__name__}_hs{har_model.hidden_size}_nl{har_model.num_layers}_do{int(dropout*100)}"
 
         # put model on cuda device
@@ -77,18 +137,13 @@ if __name__ == '__main__':
 
         # loss and optimizer
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(har_model.parameters(), lr=1e-4)
-
-        # define path to save model
-        model_save_path = create_dir(os.getcwd(),
-                                     os.path.join("HAR", "dl", f"trained_models_w_size_{window_size_samples}", "_".join(load_sensors)))
-
+        optimizer = optim.Adam(har_model.parameters(), lr=lr)
 
         # run the training loop
         performance_history = run_model_training(model=har_model, model_save_path=model_save_path,
                                                  train_dataloader=train_dataloader, test_dataloader=test_dataloader,
                                                  criterion=criterion, optimizer=optimizer, cuda_device=cuda_device,
-                                                 num_epochs=num_epochs, patience=20)
+                                                 num_epochs=num_epochs, patience=10)
 
         # plot the performance history
         plot_performance_history(performance_dict=performance_history, model_name=model_name, save_path=model_save_path)

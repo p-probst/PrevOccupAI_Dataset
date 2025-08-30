@@ -33,7 +33,6 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import DataLoader
 from sklearn.model_selection import GroupShuffleSplit
-import GPUtil
 
 # internal imports
 from constants import (NPY, VALID_ACTIVITIES, VALID_SENSORS, ACC, GYR, MAG, MAIN_ACTIVITY_LABELS,
@@ -144,6 +143,8 @@ class HARDataset(Dataset):
                   "\nThese subjects are going to be ignored for model training/testing")
 
         # (3) check load_sensors and sensor_columns
+        if not load_sensors: load_sensors = VALID_SENSORS
+
         # (a) load_sensors provided but no sensor_columns
         if load_sensors and not sensor_columns:
             raise ValueError(f"load_sensors was provided, but no sensor_columns were provided."
@@ -165,7 +166,7 @@ class HARDataset(Dataset):
                 f"\nlen(sensor_columns): {len(sensor_columns)} | num_channels data: {num_channels}")
 
         # (4) check seq_len (seq_len has to be a factor of num_timesteps to obtain full windowing)
-        if num_timesteps // seq_len != 0:
+        if num_timesteps % seq_len != 0:
 
             # compute valid factors
             factors = [factor for factor in range(1, num_timesteps) if num_timesteps % factor == 0]
@@ -455,7 +456,7 @@ class HARDataset(Dataset):
 
 
 def get_train_test_data(dataset_path : str, batch_size: int,
-                        load_sensors: List[str] = None, sensor_columns: List[str] = None,
+                        load_sensors: List[str] = None, sensor_columns: List[str] = None, seq_len: int = 1,
                         norm_method: str = None, norm_type: str = None,
                         balancing_type: str = None) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, int]:
     """
@@ -463,6 +464,8 @@ def get_train_test_data(dataset_path : str, batch_size: int,
     :param dataset_path: the path to the dataset containing the data for training and testing
     :param batch_size: the batch size to be used for the training dataset. The test batch size is set to 1.
     :param load_sensors: list of sensors (as strings) indicating which sensors should be loaded. Default: None (all sensors are loaded)
+    :param seq_len: the size of the window to window a data sample into sub-sequences. Should be a factor of the number
+    of samples (timesteps) contained in a sample. Default: 1
     :param sensor_columns: list containing the name of each sensor contained in the dataset.
                            (e.g. [x_ACC, y_ACC, z_ACC, x_GYR, ...].
                            When using generate_segmented_dataset these are stored in "numpy_columns.json". This parameter
@@ -501,12 +504,12 @@ def get_train_test_data(dataset_path : str, batch_size: int,
     # load the corresponding data
     train_dataset = HARDataset(data_path=dataset_path,
                                subject_ids=subject_IDs_train,
-                               load_sensors=load_sensors, sensor_columns=sensor_columns,
+                               load_sensors=load_sensors, sensor_columns=sensor_columns, seq_len=seq_len,
                                norm_method=norm_method, norm_type=norm_type, balancing_type=balancing_type)
 
     test_dataset = HARDataset(data_path=dataset_path,
                               subject_ids=subject_IDs_test,
-                              load_sensors=load_sensors, sensor_columns=sensor_columns,
+                              load_sensors=load_sensors, sensor_columns=sensor_columns, seq_len=seq_len,
                               norm_method=norm_method, norm_type=norm_type, balancing_type=balancing_type)
 
     # inform user about number of samples for training and test
@@ -516,7 +519,7 @@ def get_train_test_data(dataset_path : str, batch_size: int,
     # get the sample shape to obtain number of channels/features
     X, _, _ = train_dataset[0]
     print("Sample shape:", X.shape)
-    # num_channels = X.shape[-1]
+    num_channels = X.shape[-1]
 
     # X, y_main, y_sub = train_dataset[0]
     #
@@ -711,46 +714,6 @@ def generate_dataset(data_path: str, output_path: str, activities: List[str] = N
     save_json_file(subject_stats, SUBJECT_STATS_JSON, output_path)
 
     print("finished DL dataset generation")
-
-
-# TODO: find a better place in the project for this
-def select_idle_gpu(max_load: float = 0.1, max_memory: float = 0.1) -> torch.device:
-    """
-    Selects an idle GPU that meets the usage thresholds.
-    Raises RuntimeError if none available, printing current GPU stats.
-
-    Parameters
-    ----------
-    max_load : float
-        Maximum allowed GPU load (0–1).
-    max_memory : float
-        Maximum allowed memory usage (0–1).
-
-    Returns
-    -------
-    torch.device
-        CUDA device for the selected GPU.
-    """
-    # Get available GPUs based on criteria
-    available = GPUtil.getAvailable(order='first', limit=1,
-                                     maxLoad=max_load, maxMemory=max_memory)
-
-    if available:
-        gpu_id = available[0]
-        print(f"INFO: Selected GPU {gpu_id}: {GPUtil.getGPUs()[gpu_id].name}")
-        return torch.device(f"cuda:{gpu_id}")
-    else:
-        # No free GPU found → print stats and raise error
-        gpus = GPUtil.getGPUs()
-        print("INFO: No idle GPU found. Current GPU usage:")
-        for gpu in gpus:
-            print(f"GPU {gpu.id} | {gpu.name} | "
-                  f"Load: {gpu.load*100:.1f}% | "
-                  f"Memory: {gpu.memoryUsed}/{gpu.memoryTotal} MB "
-                  f"({gpu.memoryUtil*100:.1f}%)")
-        raise RuntimeError(
-            "ERROR: All GPUs are currently in use. "
-            "Consider waiting or manually setting a gpu_id.")
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
