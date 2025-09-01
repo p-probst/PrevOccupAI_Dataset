@@ -41,7 +41,7 @@ parser.add_argument('--window_size_s', default=5, type=float, help="The window s
 parser.add_argument('--seq_len', default=10, type=int, help="The window size (in samples) for sub-sequencing input samples. Should be a factor of window_size (in samples).")
 parser.add_argument('--load_sensors', nargs="+", default=None, help="The sensor to be loaded (as List[str]), e.g., [\"ACC\", \"GYR\"].")
 parser.add_argument('--norm_method', default='z-score', choices=['z-score', 'min-max', None], help="The normalization method (as str) used.")
-parser.add_argument('--norm_type', default='subject', choices=['global', 'subject', None], help="The type of normalization (as str).")
+parser.add_argument('--norm_type', default='subject', choices=['global', 'subject', 'window', None], help="The type of normalization (as str).")
 parser.add_argument('--balancing_type', default='main_classes', choices=['main_classes', 'sub_classes', None], help="The balancing type (as str).")
 
 # (3) model related parameters
@@ -76,7 +76,7 @@ if __name__ == '__main__':
         # path to segmented data folder
         segmented_data_path = os.path.join(OUTPUT_FOLDER_PATH, SEGMENTED_DATA_FOLDER)
 
-        generate_dataset(segmented_data_path, OUTPUT_FOLDER_PATH, window_size=0.5, default_input_file_type='.npy')
+        generate_dataset(segmented_data_path, OUTPUT_FOLDER_PATH, window_size=window_size, default_input_file_type='.npy')
 
     if TRAIN_TEST_MODEL:
 

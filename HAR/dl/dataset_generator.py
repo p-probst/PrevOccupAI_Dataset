@@ -581,6 +581,7 @@ def generate_dataset(data_path: str, output_path: str, activities: List[str] = N
 
     # generate output path (folder) where all the data is stored
     output_path = _generate_outfolder(output_path, int(window_size * fs))
+    print(f"Saving data to: {output_path}")
 
     # dictionary for holding the statistics for each subject
     subject_stats = {}
