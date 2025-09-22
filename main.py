@@ -3,8 +3,6 @@
 # ------------------------------------------------------------------------------------------------------------------- #
 import os
 
-from pywt import threshold
-
 from HAR.post_processing_optimizer import optimize_post_processing
 # internal imports
 from constants import VALID_SENSORS, SEGMENTED_DATA_FOLDER, EXTRACTED_FEATURES_FOLDER, RANDOM_SEED
@@ -22,6 +20,7 @@ EXTRACT_FEATURES = False
 ML_HAR = True
 ML_MODEL_SELECTION = True
 ML_TRAIN_PRODUCTION_MODEL = True
+ML_POST_PROCESSING = True
 
 # definition of folder_path
 RAW_DATA_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'

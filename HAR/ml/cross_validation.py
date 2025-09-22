@@ -17,7 +17,7 @@ None
 # ------------------------------------------------------------------------------------------------------------------- #
 import pandas as pd
 import numpy as np
-from sklearn.base import ClassifierMixin, BaseEstimator
+from sklearn.base import ClassifierMixin
 from sklearn.model_selection import GroupKFold, GridSearchCV
 from sklearn.metrics import accuracy_score
 from typing import Dict, Any, List, Union

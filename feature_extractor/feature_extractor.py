@@ -25,9 +25,8 @@ _save_subject_features(...): Saves the features extracted for a subject.
 import os
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from tqdm import tqdm
-import json
 import tsfel
 from pathlib import Path
 
@@ -35,10 +34,9 @@ from pathlib import Path
 from constants import VALID_ACTIVITIES, \
     VALID_FILE_TYPES, NPY, CSV, \
     VALID_SENSORS, ACC, GYR, MAG, ROT, \
-    SENSOR_COLS_JSON, LOADED_SENSORS_KEY, CLASS_INSTANCES_JSON, MAIN_LABEL_KEY, SUB_LABEL_KEY,\
-    ACTIVITY_MAIN_SUB_CLASS, MAIN_CLASS_KEY
+    SENSOR_COLS_JSON, LOADED_SENSORS_KEY, CLASS_INSTANCES_JSON, MAIN_LABEL_KEY, SUB_LABEL_KEY
 from raw_data_processor import slerp_smoothing, pre_process_inertial_data
-from .window import get_sliding_windows_indices, window_data, window_scaling, validate_scaler_input
+from .window import get_sliding_windows_indices, window_data, window_scaling, validate_scaler_input, trim_data
 from .quaternion_features import geodesic_distance
 from file_utils import (remove_file_duplicates, create_dir, load_json_file, save_json_file, validate_activity_input,
                         get_labels)
@@ -311,6 +309,38 @@ def extract_quaternion_features(quat_windowed_data) -> pd.DataFrame:
 
     # create pandas.DataFrame
     return pd.DataFrame(quat_features, columns=["quat_mean_dist", "quat_std_dist", "quat_total_dist"])
+
+def pre_process_signals(subject_data: pd.DataFrame, sensor_names: List[str], w_size: float,
+                         fs: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Pre-processes the sensors contained in data_array according to their sensor type. Removes samples from the
+    impulse response of the filters and trims the data and label vector to accommodate full windowing of the data.
+
+    :param subject_data: pandas.DataFrame containing the sensor data
+    :param sensor_names: list of strings correspondent to the sensor names
+    :param w_size: window size in seconds
+    :param fs: the sampling frequency
+    :return: the processed sensor data and label vector
+    """
+
+    # convert data to numpy array
+    sensor_data = subject_data.values[:,1:-1]
+
+    # get the label vector
+    labels = subject_data.values[:, -1]
+
+    # pre-process the data
+    sensor_data = _pre_process_sensors(sensor_data, sensor_names)
+
+    # remove impulse response
+    sensor_data = sensor_data[250:,:]
+    labels = labels[250:]
+
+    # trim the data to accommodate full windowing
+    sensor_data, to_trim = trim_data(sensor_data, w_size=w_size, fs=fs)
+    labels = labels[:-to_trim]
+
+    return sensor_data, labels
 
 
 # ------------------------------------------------------------------------------------------------------------------- #

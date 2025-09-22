@@ -23,7 +23,6 @@ _calculate_class_percentages(...): Calculates the percentage of each class based
 import os
 import numpy as np
 import pandas as pd
-import joblib
 import tsfel
 from typing import Optional, List, Dict, Tuple
 from sklearn.ensemble import RandomForestClassifier
@@ -34,7 +33,7 @@ from tqdm import tqdm
 
 # internal imports
 from raw_data_processor.load_sensor_data import load_data_from_same_recording
-from .load import load_labels_from_log, load_production_model
+from .ml.load import load_labels_from_log, load_production_model
 from .post_process import majority_vote_mid, threshold_tuning, heuristics_correction, expand_classification
 from feature_extractor.feature_extractor import pre_process_signals
 from constants import TXT
