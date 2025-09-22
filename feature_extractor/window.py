@@ -86,7 +86,7 @@ def window_data(data, indices):
                     obtained by using the get_sliding_windows_indices(...) function
     :return: a multi-dimensional array containing the signal(s) sliced into windows.
              In case data is 1-D, then the array is of shape [number of windows, window length (in samples)].
-             In case data is 2-D, then the array is of shape [number of windows, window length (in sampples), number of signals/channels]
+             In case data is 2-D, then the array is of shape [number of windows, window length (in samples), number of signals/channels]
     """
     return data[indices]
 

@@ -8,18 +8,14 @@ extract_features(...): Extracts features for all subjects and activities.
 load_data(...): loads the data located at full_file_path.
 extract_tsfel_features(...): Extracts features from the data windows contained in windowed_data using TSFEL.
 extract_quaternion_features(...): Extracts quaterion-based features from the rotation vector sensor.
-load_json_file(...): Loads a json file.
-pre_process_signals(...): Preprocesses the sensor data and label vector
 ------------------
 [Private]
-_validate_activity_input(...): Checks whether the provided activities are valid.
 _generate_outfolder(...): Generates the folders for storing the data.
 _load_sensor_names(...): Loads the sensor names from a json file containing it.
 _pre_process_sensors(...): Pre-processes the sensors contained in data_array according to their sensor type.
 _extract_features(...): Extracts features from the windowed data.
-_get_labels(...): Gets the labels for the main and sub-activity corresponding to the file name.
+_generate_labels(...): Gets the labels for the main and sub-activity corresponding to the file name.
 _save_subject_features(...): Saves the features extracted for a subject.
-_pre_process_sensors(...): Pre-processes the sensors contained in data_array according to their sensor type.
 ------------------
 """
 
@@ -29,7 +25,7 @@ _pre_process_sensors(...): Pre-processes the sensors contained in data_array acc
 import os
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 from tqdm import tqdm
 import json
 import tsfel
@@ -42,9 +38,10 @@ from constants import VALID_ACTIVITIES, \
     SENSOR_COLS_JSON, LOADED_SENSORS_KEY, CLASS_INSTANCES_JSON, MAIN_LABEL_KEY, SUB_LABEL_KEY,\
     ACTIVITY_MAIN_SUB_CLASS, MAIN_CLASS_KEY
 from raw_data_processor import slerp_smoothing, pre_process_inertial_data
-from .window import get_sliding_windows_indices, window_data, window_scaling, validate_scaler_input, trim_data
+from .window import get_sliding_windows_indices, window_data, window_scaling, validate_scaler_input
 from .quaternion_features import geodesic_distance
-from file_utils import remove_file_duplicates, create_dir, load_json_file
+from file_utils import (remove_file_duplicates, create_dir, load_json_file, save_json_file, validate_activity_input,
+                        get_labels)
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -96,7 +93,7 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
         activities = VALID_ACTIVITIES
 
     # check validity of provided activities
-    activities = _validate_activity_input(activities)
+    activities = validate_activity_input(activities)
 
     # check validity of the provided scaler if not None
     if window_scaler:
@@ -193,7 +190,7 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
                     features_df = _extract_features(windowed_data, sensor_names, features_dict, fs=fs)
 
                     # get labels
-                    labels_df = _get_labels(file, windowed_data.shape[0])
+                    labels_df = _generate_labels(file, windowed_data.shape[0])
 
                     # concatenate the features and the labels
                     features_df = pd.concat([features_df, labels_df], axis=1)
@@ -210,6 +207,7 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
 
                 print(f"No files found for activity: {activity}. Skipping feature extraction for this activity.")
 
+        # TODO: potential bug if no files are found
         # concatenate the features for all activities into a single file
         subject_features = pd.concat(feature_df_list, axis=0, ignore_index=True)
 
@@ -226,11 +224,9 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
         print('saving subject data')
         _save_subject_features(subject_features, subject, output_path, file_type=output_file_type)
 
-    print("finished feature extraction")
     # save the json_dict
-    with open(os.path.join(output_path, CLASS_INSTANCES_JSON), "w") as json_file:
-
-        json.dump(json_dict, json_file)
+    save_json_file(json_dict, CLASS_INSTANCES_JSON, output_path)
+    print("finished feature extraction")
 
 
 def load_data(full_file_path: str) -> np.array:
@@ -317,69 +313,9 @@ def extract_quaternion_features(quat_windowed_data) -> pd.DataFrame:
     return pd.DataFrame(quat_features, columns=["quat_mean_dist", "quat_std_dist", "quat_total_dist"])
 
 
-def pre_process_signals(subject_data: pd.DataFrame, sensor_names: List[str], w_size: float,
-                         fs: int) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Pre-processes the sensors contained in data_array according to their sensor type. Removes samples from the
-    impulse response of the filters and trims the data and label vector to accommodate full windowing of the data.
-
-    :param subject_data: pandas.DataFrame containing the sensor data
-    :param sensor_names: list of strings correspondent to the sensor names
-    :param w_size: window size in seconds
-    :param fs: the sampling frequency
-    :return: the processed sensor data and label vector
-    """
-
-    # convert data to numpy array
-    sensor_data = subject_data.values[:,1:-1]
-
-    # get the label vector
-    labels = subject_data.values[:, -1]
-
-    # pre-process the data
-    sensor_data = _pre_process_sensors(sensor_data, sensor_names)
-
-    # remove impulse response
-    sensor_data = sensor_data[250:,:]
-    labels = labels[250:]
-
-    # trim the data to accommodate full windowing
-    sensor_data, to_trim = trim_data(sensor_data, w_size=w_size, fs=fs)
-    labels = labels[:-to_trim]
-
-    return sensor_data, labels
-
-
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def _validate_activity_input(activities: List[str]) -> List[str]:
-    """
-    Checks whether the provided activities are valid.
-    :param activities: list of string containing the activities
-    :return:
-    """
-
-    # check validity of provided activities
-    invalid_activities = [chosen_activity for chosen_activity in activities if chosen_activity not in VALID_ACTIVITIES]
-
-    # remove invalid activities
-    if invalid_activities:
-
-        print(f"-->The following provided activities are not valid: {invalid_activities}"
-              "\n-->These activities are not considered for feature extraction")
-
-        # filter out invalid activities
-        activities = [valid_activity for valid_activity in activities if valid_activity in VALID_ACTIVITIES]
-
-        # only provided non-valid activity strings
-        if not activities:
-            raise ValueError(
-                f"None of the provided activities is supported. Please chose from the following: {VALID_ACTIVITIES}")
-
-    return activities
-
-
 def _generate_outfolder(features_data_path: str, window_scaler: str, window_size_samples: float) -> str:
     """
     Generates the folders for storing the data
@@ -426,84 +362,6 @@ def _load_sensor_names(data_file_path: str) -> List[str]:
     return sensor_names
 
 
-def _extract_features(windowed_data: np.array, sensor_names: List[str],
-                      features_dict: Dict[Any, Any], fs: int = 100) -> pd.DataFrame:
-    """
-    Extracts features from the windowed data.
-    (1) TSFEL: defined in cfg_file.json
-    (2) Quaternion-based: mean, std, and total geodesic distance.
-    :param windowed_data: the windowed data
-    :param sensor_names: the name of the sensors contained in windowed data
-    :param features_dict: the feature dictionary loaded from cfg_file.json
-    :param fs: the sampling frequency (in Hz). Default: 100
-    :return: pandas.DataFrame containing the extracted features
-    """
-    # extract features using TSFEL for all the sensors
-    features_df = extract_tsfel_features(windowed_data, sensor_names, features_dict, fs=fs)
-
-    # check if there are quaternions in the data
-    if any(ROT in sensor for sensor in sensor_names):
-
-        # get the columns that contain the quaternion data
-        quat_cols = [col for col, sensor_name in enumerate(sensor_names) if ROT in sensor_name]
-
-        # extract features from only the quaternions
-        quat_features = extract_quaternion_features(windowed_data[:, :, quat_cols])
-
-        # concatenate features to one DataFrame
-        features_df = pd.concat([features_df, quat_features], axis=1)
-
-    return features_df
-
-
-def _get_labels(file_name: str, num_windows: int) -> pd.DataFrame():
-    """
-    Gets the labels for the main and sub-activity corresponding to the file name. The file name encodes the main and
-    sub-activity.
-    :param file_name: the name of the file
-    :param num_windows: the number of windows into which the data was windowed
-    :return: pandas.DataFrame containing the labels.
-    """
-
-    print("--> getting labels from file name")
-    # get main and sub-activity
-    main_activity, sub_activity = os.path.splitext(file_name)[0].split('_')[:2]
-
-    # get corresponding main and subclasses
-    main_class = ACTIVITY_MAIN_SUB_CLASS[main_activity][MAIN_CLASS_KEY]
-    sub_class = ACTIVITY_MAIN_SUB_CLASS[main_activity][sub_activity]
-
-    print(f'--> main activity: {main_activity} | class: {main_class}'
-          f'\n--> sub-activity: {sub_activity} | class: {sub_class}')
-
-    # generate the DataFrame
-    label_data = np.tile(np.array([main_class, sub_class]), (num_windows, 1))
-
-    return pd.DataFrame(label_data, columns=[MAIN_LABEL_KEY, SUB_LABEL_KEY])
-
-
-def _save_subject_features(subject_feature_df: pd.DataFrame(), subject_num: str, output_path: str,
-                           file_type: str = '.npy') -> None:
-    """
-    Saves the features extracted for a subject.
-    :param subject_feature_df: pandas.DataFrame containing the extracted features
-    :param file_type: the file type as which the features should be stored. Either: '.npy' or '.csv'. Default: '.npy'
-    :return: None
-    """
-    file_name = f'{subject_num}{file_type}'
-    file_path = os.path.join(output_path, file_name)
-
-    # save the file
-    if file_type == CSV:
-
-        # as csv file
-        subject_feature_df.to_csv(file_path, sep=';', index=False)
-    else:
-
-        # as npy file
-        np.save(file_path, subject_feature_df.values)
-
-
 def _pre_process_sensors(data_array: np.array, sensor_names: List[str], fs=100) -> np.array:
     """
     Pre-processes the sensors contained in data_array according to their sensor type.
@@ -547,6 +405,80 @@ def _pre_process_sensors(data_array: np.array, sensor_names: List[str], fs=100) 
             print(f"The {valid_sensor} sensor is not in the loaded data. Skipping the pre-processing of this sensor.")
 
     return processed_data
+
+
+def _extract_features(windowed_data: np.array, sensor_names: List[str],
+                      features_dict: Dict[Any, Any], fs: int = 100) -> pd.DataFrame:
+    """
+    Extracts features from the windowed data.
+    (1) TSFEL: defined in cfg_file.json
+    (2) Quaternion-based: mean, std, and total geodesic distance.
+    :param windowed_data: the windowed data
+    :param sensor_names: the name of the sensors contained in windowed data
+    :param features_dict: the feature dictionary loaded from cfg_file.json
+    :param fs: the sampling frequency (in Hz). Default: 100
+    :return: pandas.DataFrame containing the extracted features
+    """
+    # extract features using TSFEL for all the sensors
+    features_df = extract_tsfel_features(windowed_data, sensor_names, features_dict, fs=fs)
+
+    # check if there are quaternions in the data
+    if any(ROT in sensor for sensor in sensor_names):
+
+        # get the columns that contain the quaternion data
+        quat_cols = [col for col, sensor_name in enumerate(sensor_names) if ROT in sensor_name]
+
+        # extract features from only the quaternions
+        quat_features = extract_quaternion_features(windowed_data[:, :, quat_cols])
+
+        # concatenate features to one DataFrame
+        features_df = pd.concat([features_df, quat_features], axis=1)
+
+    return features_df
+
+
+def _generate_labels(file_name: str, num_windows: int) -> pd.DataFrame():
+    """
+    Gets the labels for the main and sub-activity corresponding to the file name. The file name encodes the main and
+    sub-activity.
+    :param file_name: the name of the file
+    :param num_windows: the number of windows into which the data was windowed
+    :return: pandas.DataFrame containing the labels.
+    """
+
+    print("--> getting labels from file name")
+    # split off the file extension
+    main_sub_activity = os.path.splitext(file_name)[0]
+
+    # get corresponding main and subclasses
+    main_class, sub_class = get_labels(main_sub_activity)
+
+    # generate the DataFrame
+    label_data = np.tile(np.array([main_class, sub_class]), (num_windows, 1))
+
+    return pd.DataFrame(label_data, columns=[MAIN_LABEL_KEY, SUB_LABEL_KEY])
+
+
+def _save_subject_features(subject_feature_df: pd.DataFrame(), subject_num: str, output_path: str,
+                           file_type: str = '.npy') -> None:
+    """
+    Saves the features extracted for a subject.
+    :param subject_feature_df: pandas.DataFrame containing the extracted features
+    :param file_type: the file type as which the features should be stored. Either: '.npy' or '.csv'. Default: '.npy'
+    :return: None
+    """
+    file_name = f'{subject_num}{file_type}'
+    file_path = os.path.join(output_path, file_name)
+
+    # save the file
+    if file_type == CSV:
+
+        # as csv file
+        subject_feature_df.to_csv(file_path, sep=';', index=False)
+    else:
+
+        # as npy file
+        np.save(file_path, subject_feature_df.values)
 
 
 

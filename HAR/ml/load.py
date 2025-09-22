@@ -10,8 +10,6 @@ load_production_model(...): Loads the pre-trained model
 ------------------
 [Private]
 _get_feature_names_and_instances(...): Extracts feature names and determines the number of instances per sub-class based on the selected balancing strategy.
-_balance_main_class(...): Determines the number of instances to sample from each sub-class so that the aggregated main class distributions (Sit, Stand, Walk) remain balanced.
-_balance_sub_class(...): Determines the number of instances to sample from each sub-class so that all sub-classes have an equal number of instances.
 _load_file(...): loads the feature data based on its file type.
 _balance_subject_data(...): Balances the subject's feature data by selecting the needed number of instances from each subclass.
 ------------------
@@ -29,15 +27,9 @@ import joblib
 from sklearn.ensemble import RandomForestClassifier
 
 # internal imports
-from constants import CLASS_INSTANCES_JSON, FEATURE_COLS_KEY, SUB_ACTIVITIES_WALK_LABELS, SUB_ACTIVITIES_STAND_LABELS, \
-    NPY, SUB_LABEL_KEY, MAIN_LABEL_KEY, RANDOM_SEED
+from constants import CLASS_INSTANCES_JSON, FEATURE_COLS_KEY, NPY, SUB_LABEL_KEY, MAIN_LABEL_KEY
 from file_utils import remove_file_duplicates, load_json_file
-
-# ------------------------------------------------------------------------------------------------------------------- #
-# constants
-# ------------------------------------------------------------------------------------------------------------------- #
-MAIN_CLASS_BALANCING = 'main_classes'
-SUB_CLASS_BALANCING = 'sub_classes'
+from ..data_balancer import balance_main_class, balance_sub_class, balance_subject_data, MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -112,10 +104,10 @@ def load_features(feature_data_path: str, balance_data: str = None, default_inpu
         if instances_per_sub_class:
 
             # perform balancing
-            subject_features = _balance_subject_data(subject_features, feature_names,
-                                                     instances_sit=instances_per_sub_class[0],
-                                                     instances_stand=instances_per_sub_class[1],
-                                                     instances_walk=instances_per_sub_class[2])
+            subject_features = _perform_subject_balancing(subject_features, feature_names,
+                                                          instances_sit=instances_per_sub_class[0],
+                                                          instances_stand=instances_per_sub_class[1],
+                                                          instances_walk=instances_per_sub_class[2])
 
         instances_per_subject = subject_features.shape[0]
         # generate subject id (needed for groupKFold)
@@ -258,11 +250,11 @@ def _get_feature_names_and_instances(feature_data_path: str, balance_data: str =
     # apply balancing if needed
     if balance_data == MAIN_CLASS_BALANCING:
 
-        instances_per_sub_class = _balance_main_class(class_instances_df)
+        instances_per_sub_class = balance_main_class(class_instances_df)
 
     elif balance_data == SUB_CLASS_BALANCING:
 
-        instances_per_sub_class = _balance_sub_class(class_instances_df)
+        instances_per_sub_class = balance_sub_class(class_instances_df)
 
     else:
 
@@ -270,90 +262,6 @@ def _get_feature_names_and_instances(feature_data_path: str, balance_data: str =
         instances_per_sub_class = None
 
     return feature_names, instances_per_sub_class
-
-
-def _balance_main_class(class_instances_df: pd.DataFrame) -> Tuple[int, int, int]:
-    """
-    Determines the number of instances to sample from each sub-class so that the aggregated main class
-    distributions (Sit, Stand, Walk) remain balanced.
-
-    Mapping of main classes to their sub-classes:
-        - Sit: sit
-        - Stand: stand_still, stand_talk, stand_coffee, stand_folders
-        - Walk: walk_medium, walk_fast, walk_stairs_up, walk_stairs_down
-
-    The balancing ensures that the total number of instances per main class is equal by adjusting
-    the number of instances drawn from each sub-class.
-
-    Note: this function could produce a bug when being used on another dataset. The code works because:
-          min_instances_walk < min_instances_stand is always the case for all subjects as the stairs recordings were
-          the shortest.
-
-    :param class_instances_df: pandas.DataFrame where:
-                                 - Rows represent subjects.
-                                 - Columns represent the number of instances per sub-class.
-                                 - The first three columns contain the total amount of instances for the main classes.
-    :return: A tuple of integers (instances_sit, instances_stand, instances_walk), representing the number of instances
-             to sample from each sub-class so that Sit, Stand, and Walk remain balanced.
-    """
-
-    # calculate the minimum per class over all subjects
-    min_instances = class_instances_df.min(axis=0)
-    min_instances.index = min_instances.index.astype(int)
-
-    # get the number of instances belonging to the walk and stand subclasses
-    min_instances_walk = min_instances.loc[SUB_ACTIVITIES_WALK_LABELS].min()
-    min_instances_stand = min_instances.loc[SUB_ACTIVITIES_STAND_LABELS].min()
-
-    # calculate how many main instances that would give
-    total_walk = min_instances_walk * len(SUB_ACTIVITIES_WALK_LABELS)
-    total_stand = min_instances_stand * len(SUB_ACTIVITIES_STAND_LABELS)
-
-    # find the class with the least amount of total instances
-    instances_sit = min(total_stand, total_walk)
-    instances_walk = instances_sit // len(SUB_ACTIVITIES_WALK_LABELS)
-    instances_stand = instances_sit // len(SUB_ACTIVITIES_STAND_LABELS)
-
-    return instances_sit, instances_stand, instances_walk
-
-
-def _balance_sub_class(class_instances_df: pd.DataFrame) -> Tuple[int, int, int]:
-    """
-    Determines the number of instances to sample from each sub-class so that all sub-classes
-    (from Sit, Stand, Walk) have an equal number of instances.
-
-    Mapping of main classes to their sub-classes:
-        - Sit: sit
-        - Stand: stand_still, stand_talk, stand_coffee, stand_folders
-        - Walk: walk_medium, walk_fast, walk_stairs_up, walk_stairs_down
-
-    This ensures that no specific sub-class is overrepresented, reducing bias in the model.
-
-    :param class_instances_df: pandas.DataFrame where:
-                                 - Rows represent subjects.
-                                 - Columns represent the number of instances per sub-class
-                                 - The first three columns contain the total amount of instances for the main classes.
-
-    :return: A tuple of integers (instances_sit, instances_stand, instances_walk),
-             representing the number of instances to sample from each sub-class
-             so that all sub-classes have the same number of instances.
-    """
-
-    # calculate the minimum per class over all subjects
-    min_instances = class_instances_df.min(axis=0)
-    min_instances.index = min_instances.index.astype(int)
-
-    # get the number of instances belonging to the walk and stand subclasses
-    min_instances_walk = min_instances.loc[SUB_ACTIVITIES_WALK_LABELS].min()
-    min_instances_stand = min_instances.loc[SUB_ACTIVITIES_STAND_LABELS].min()
-
-    # find the class with the least amount of instances and set this as the number of instances
-    # that need to be sampled from each sub-class
-    instances_sit = min(min_instances_walk, min_instances_stand)
-    instances_walk = instances_sit
-    instances_stand = instances_sit
-
-    return instances_sit, instances_stand, instances_walk
 
 
 def _load_file(file_path: str, file_type: str) -> np.array:
@@ -376,7 +284,7 @@ def _load_file(file_path: str, file_type: str) -> np.array:
     return subject_features
 
 
-def _balance_subject_data(subject_features: np.array, feature_names: List[str], instances_sit: int,
+def _perform_subject_balancing(subject_features: np.array, feature_names: List[str], instances_sit: int,
                           instances_stand: int, instances_walk: int) -> np.array:
     """
     Balances the subject's feature data by selecting the needed number of instances from each subclass.
@@ -393,39 +301,8 @@ def _balance_subject_data(subject_features: np.array, feature_names: List[str], 
     sub_class_col_idx = feature_names.index(SUB_LABEL_KEY)
     sub_class_labels = subject_features[:, sub_class_col_idx].astype(int, copy=False)
 
-    # list for holding the indices for each sub_class
-    indices_for_balancing = []
-
-    # list for holding the existing subclasses
-    list_subclass = []
-
-    # cycle over the unique labels
-    for sub_class_label in np.unique(sub_class_labels):
-
-        # add the subclass to the list
-        list_subclass.append(sub_class_label)
-
-        # get the indices of the class
-        class_indices = np.where(sub_class_labels == sub_class_label)[0]
-
-        # shuffle the indices
-        class_indices = np.random.permutation(class_indices)
-
-        # retrieve the indices to balance the data
-        if sub_class_label in SUB_ACTIVITIES_STAND_LABELS:
-
-            indices_for_balancing.append(class_indices[:instances_stand])
-
-        elif sub_class_label in SUB_ACTIVITIES_WALK_LABELS:
-
-            indices_for_balancing.append(class_indices[:instances_walk])
-
-        else:  # sit
-
-            indices_for_balancing.append(class_indices[:instances_sit])
-
-    # concatenate all indices
-    indices_for_balancing = np.concatenate(indices_for_balancing)
+    # get the indices for balancing
+    indices_for_balancing = balance_subject_data(sub_class_labels, instances_sit, instances_stand, instances_walk)
 
     # retrieve the balanced features
     return subject_features[indices_for_balancing, :]
