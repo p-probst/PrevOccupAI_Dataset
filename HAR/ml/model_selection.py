@@ -22,16 +22,14 @@ import os
 import numpy as np
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay, confusion_matrix
+from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.base import ClassifierMixin, BaseEstimator
 
 # internal imports
 from .load import load_features
@@ -267,9 +265,8 @@ def _tune_and_evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Serie
     # get the project path
     project_path = os.getcwd()
 
-    # TODO: this path needs to be updated according to the refactoring
     # generate a folder path to store the model and confusion matrix
-    out_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{window_size_samples}_w_size"))
+    out_path = create_dir(project_path, os.path.join("HAR", "ml", "production_models", f"{window_size_samples}_w_size"))
 
     # get train and test accuracy
     _test_all(model, window_size_samples, X_train, X_test, y_train, y_test, out_path)

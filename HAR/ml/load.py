@@ -8,8 +8,6 @@ load_features(...): loads the extracted features from all the subjects.
 ------------------
 [Private]
 _get_feature_names_and_instances(...): Extracts feature names and determines the number of instances per sub-class based on the selected balancing strategy.
-_balance_main_class(...): Determines the number of instances to sample from each sub-class so that the aggregated main class distributions (Sit, Stand, Walk) remain balanced.
-_balance_sub_class(...): Determines the number of instances to sample from each sub-class so that all sub-classes have an equal number of instances.
 _load_file(...): loads the feature data based on its file type.
 _balance_subject_data(...): Balances the subject's feature data by selecting the needed number of instances from each subclass.
 ------------------
@@ -25,16 +23,9 @@ from typing import Tuple, List
 from tqdm import tqdm
 
 # internal imports
-from constants import CLASS_INSTANCES_JSON, FEATURE_COLS_KEY, SUB_ACTIVITIES_WALK_LABELS, SUB_ACTIVITIES_STAND_LABELS, \
-    NPY, SUB_LABEL_KEY, MAIN_LABEL_KEY, RANDOM_SEED
+from constants import CLASS_INSTANCES_JSON, FEATURE_COLS_KEY, NPY, SUB_LABEL_KEY, MAIN_LABEL_KEY
 from file_utils import remove_file_duplicates, load_json_file
-from ..data_balancer import balance_main_class, balance_sub_class, balance_subject_data
-
-# ------------------------------------------------------------------------------------------------------------------- #
-# constants
-# ------------------------------------------------------------------------------------------------------------------- #
-MAIN_CLASS_BALANCING = 'main_classes'
-SUB_CLASS_BALANCING = 'sub_classes'
+from ..data_balancer import balance_main_class, balance_sub_class, balance_subject_data, MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
