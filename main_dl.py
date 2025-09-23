@@ -14,7 +14,7 @@ print(f"CUDA available: {torch.cuda.is_available()}")
 from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY, VALID_SENSORS, RANDOM_SEED
 from HAR.dl import generate_dataset, get_train_test_data, run_model_training, select_idle_gpu, configure_seed
 from HAR.dl import DL_DATASET
-from HAR.dl import HARLstm
+from HAR.dl import HARRnn
 from HAR.dl.train_test import plot_performance_history
 from file_utils import create_dir, load_json_file
 
@@ -45,6 +45,7 @@ parser.add_argument('--norm_type', default='subject', choices=['global', 'subjec
 parser.add_argument('--balancing_type', default='main_classes', choices=['main_classes', 'sub_classes', None], help="The balancing type (as str).")
 
 # (3) model related parameters
+parser.add_argument('--model_type', default='lstm', type=str, help="The model to be trained", choices=['lstm', 'gru'])
 parser.add_argument('--num_epochs', default=40, type=int, help="The number of epochs used in model training.")
 parser.add_argument('--batch_size', default=64, type=int, help="The batch size used in model training.")
 parser.add_argument('--hidden_size', default=128, type=int, help="The hidden size used in RNN models (LSTM, GRU).")
@@ -82,6 +83,7 @@ if __name__ == '__main__':
 
         # set dataset related parameters
         dataset_path = os.path.join(OUTPUT_FOLDER_PATH, DL_DATASET, f'w_{window_size_samples}')
+        model_type = parsed_args.model_type
         load_sensors = parsed_args.load_sensors
         seq_len = parsed_args.seq_len
         norm_method = parsed_args.norm_method
@@ -114,7 +116,7 @@ if __name__ == '__main__':
         project_path = os.path.dirname(os.path.abspath(__file__))
         model_save_path = create_dir(project_path,
                                      os.path.join("HAR", "dl",
-                                                  f"trained_models_w_size_{window_size_samples}_seq_len{seq_len}",
+                                                  f"trained_{model_type}_w_size_{window_size_samples}_seq_len{seq_len}",
                                                   f"nm_{norm_type}", f"nt_{norm_method}",
                                                   "_".join(load_sensors)))
 
@@ -126,11 +128,11 @@ if __name__ == '__main__':
                                                           balancing_type=balancing_type)
 
         # set model variables and parameters
-        har_model = HARLstm(num_features=int(num_channels*seq_len), hidden_size=hidden_size, num_layers=num_layers,
-                            num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
+        har_model = HARRnn(model_type=model_type, num_features=int(num_channels * seq_len), hidden_size=hidden_size, num_layers=num_layers,
+                           num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
         # generate model name
-        model_name = f"{har_model.__class__.__name__}_hs{har_model.hidden_size}_nl{har_model.num_layers}_do{int(dropout*100)}"
+        model_name = f"{har_model.__class__.__name__}_{model_type}_hs{har_model.hidden_size}_nl{har_model.num_layers}_do{int(dropout*100)}"
 
         # put model on cuda device
         har_model.to(cuda_device)
