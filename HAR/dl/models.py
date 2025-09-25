@@ -51,15 +51,15 @@ class HARRnn(nn.Module):
         # call to super class
         super().__init__()
 
-        if self.model_type not in SUPPORTED_DL_MODELS:
-            raise ValueError(f"Unsupported model type: {model_type}. Use 'lstm' or 'gru'.")
-
         # init class variables
         self.model_type = model_type
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.num_classes = num_classes
         self.dropout = dropout
+
+        if self.model_type not in SUPPORTED_DL_MODELS:
+            raise ValueError(f"Unsupported model type: {model_type}. Use 'lstm' or 'gru'.")
 
         # model architecture
         # check if it is a LSTM layer or a GRU layer

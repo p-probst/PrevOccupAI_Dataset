@@ -132,7 +132,10 @@ if __name__ == '__main__':
                            num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
         # generate model name
-        model_name = f"{har_model.__class__.__name__}_{model_type}_hs{har_model.hidden_size}_nl{har_model.num_layers}_do{int(dropout*100)}"
+        model_name = f"{har_model.__class__.__name__}_{har_model.model_type}_hs{har_model.hidden_size}_nl{har_model.num_layers}_do{int(dropout*100)}"
+
+        print(f"Running model: {model_name}")
+
 
         # put model on cuda device
         har_model.to(cuda_device)
