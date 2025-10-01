@@ -114,7 +114,7 @@ if __name__ == '__main__':
         project_path = os.path.dirname(os.path.abspath(__file__))
         model_save_path = create_dir(project_path,
                                      os.path.join("HAR", "dl",
-                                                  f"trained_models_w_size_{window_size_samples}_seq_len{seq_len}",
+                                                  f"trained_models_wsize-{window_size_samples}_seqlen-{seq_len}_batchsize-{batch_size}",
                                                   f"nm_{norm_type}", f"nt_{norm_method}",
                                                   "_".join(load_sensors)))
 
@@ -130,7 +130,7 @@ if __name__ == '__main__':
                             num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
         # generate model name
-        model_name = f"{har_model.__class__.__name__}_hs{har_model.hidden_size}_nl{har_model.num_layers}_do{int(dropout*100)}"
+        model_name = f"{har_model.__class__.__name__}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(dropout*100)}"
 
         # put model on cuda device
         har_model.to(cuda_device)
