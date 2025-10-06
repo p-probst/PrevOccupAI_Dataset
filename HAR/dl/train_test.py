@@ -100,7 +100,7 @@ def run_model_training(
             epochs_no_improve = 0
 
             # obtain model name
-            model_name = f"{model.__class__.__name__}_hs{model.hidden_size}_nl{model.num_layers}_do{int(model.dropout * 100)}.pt"
+            model_name = f"{model.__class__.__name__}_{model.model_type}_hs-{model.hidden_size}_nl-{model.num_layers}_do-{int(model.dropout * 100)}.pt"
 
             # store best model params
             torch.save(model.state_dict(), os.path.join(model_save_path, model_name))
