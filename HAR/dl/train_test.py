@@ -40,7 +40,7 @@ VAL_LOSS_KEY = "val_loss"
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
 def run_model_training(
-                       model: nn.Module, model_save_path: str,
+                       model: nn.Module, model_save_path: str, model_name: str,
                        train_dataloader: torch.utils.data.DataLoader, test_dataloader: torch.utils.data.DataLoader,
                        test_dataloader_subject_wise: List[Dict[str, torch.utils.data.DataLoader]],
                        criterion: nn.Module, optimizer: torch.optim.Optimizer,
@@ -50,6 +50,7 @@ def run_model_training(
     The loop is terminated using early stopping in case the performance does not improve according to the set patience.
     :param model: PyTorch model to be trained
     :param model_save_path: file path to where the model is stored
+    :param model_name: the name of the model as a str
     :param train_dataloader: PyTorch DataLoader for training data
     :param test_dataloader: PyTorch DataLoader for validation data
     :param test_dataloader_subject_wise: Dictionary of subject-wise test dataloaders. Contains the subject ID and the corresponding dataloader
@@ -125,11 +126,8 @@ def run_model_training(
             # reset early-stopping counter
             epochs_no_improve = 0
 
-            # obtain model name
-            model_name = f"{model.__class__.__name__}_{model.model_type}_hs-{model.hidden_size}_nl-{model.num_layers}_do-{int(model.dropout * 100)}.pt"
-
             # store best model params
-            torch.save(model.state_dict(), os.path.join(model_save_path, model_name))
+            torch.save(model.state_dict(), os.path.join(model_save_path, f"{model_name}.pt"))
             print(f"INFO: New best model obtained at epoch {epoch} (val. acc: {best_val_acc:.4f})")
 
         else: # no improvement

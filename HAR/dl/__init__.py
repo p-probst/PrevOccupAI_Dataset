@@ -1,5 +1,5 @@
 from .dataset_generator import generate_dataset, HARDataset, get_train_test_data, DL_DATASET
-from .models import HARLstm
+from .models import HARRnn
 from .train_test import run_model_training
 from .utils import select_idle_gpu, configure_seed
 
@@ -8,7 +8,7 @@ __all__ =[
     "HARDataset",
     "DL_DATASET",
     "get_train_test_data",
-    "HARLstm",
+    "HARRnn",
     "run_model_training",
     "select_idle_gpu",
     "configure_seed"

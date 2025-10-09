@@ -14,7 +14,7 @@ print(f"CUDA available: {torch.cuda.is_available()}")
 from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY, VALID_SENSORS, RANDOM_SEED
 from HAR.dl import generate_dataset, get_train_test_data, run_model_training, select_idle_gpu, configure_seed
 from HAR.dl import DL_DATASET
-from HAR.dl import HARLstm
+from HAR.dl import HARRnn
 from HAR.dl.train_test import plot_performance_history
 from file_utils import create_dir, load_json_file
 
@@ -45,6 +45,7 @@ parser.add_argument('--norm_type', default='subject', choices=['global', 'subjec
 parser.add_argument('--balancing_type', default='main_classes', choices=['main_classes', 'sub_classes', None], help="The balancing type (as str).")
 
 # (3) model related parameters
+parser.add_argument('--model_type', default='lstm', type=str, help="The model to be trained", choices=['lstm', 'gru'])
 parser.add_argument('--num_epochs', default=40, type=int, help="The number of epochs used in model training.")
 parser.add_argument('--batch_size', default=64, type=int, help="The batch size used in model training.")
 parser.add_argument('--hidden_size', default=128, type=int, help="The hidden size used in RNN models (LSTM, GRU).")
@@ -92,6 +93,7 @@ if __name__ == '__main__':
         if not load_sensors: load_sensors = VALID_SENSORS
 
         # set model related parameters
+        model_type = parsed_args.model_type
         num_epochs = parsed_args.num_epochs
         batch_size = parsed_args.batch_size
         hidden_size = parsed_args.hidden_size
@@ -126,11 +128,11 @@ if __name__ == '__main__':
                                 balancing_type=balancing_type))
 
         # set model variables and parameters
-        har_model = HARLstm(num_features=int(num_channels*seq_len), hidden_size=hidden_size, num_layers=num_layers,
+        har_model = HARRnn(model_type=model_type, num_features=int(num_channels*seq_len), hidden_size=hidden_size, num_layers=num_layers,
                             num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
         # generate model name
-        model_name = f"{har_model.__class__.__name__}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(dropout*100)}"
+        model_name = f"{har_model.__class__.__name__}_{har_model.model_type}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(har_model.dropout * 100)}"
 
         # put model on cuda device
         har_model.to(cuda_device)
@@ -140,8 +142,9 @@ if __name__ == '__main__':
         optimizer = optim.Adam(har_model.parameters(), lr=lr)
 
         # run the training loop
-        performance_history = run_model_training(model=har_model, model_save_path=model_save_path,
+        performance_history = run_model_training(model=har_model, model_save_path=model_save_path, model_name=model_name,
                                                  train_dataloader=train_dataloader, test_dataloader=test_dataloader,
+                                                 test_dataloader_subject_wise=test_dataloader_subject_wise,
                                                  criterion=criterion, optimizer=optimizer, cuda_device=cuda_device,
                                                  num_epochs=num_epochs, patience=10)
 
