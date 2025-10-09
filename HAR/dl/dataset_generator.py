@@ -72,6 +72,10 @@ SUBJECT_NORM = "subject"
 GLOBAL_NORM = "global"
 NORM_TYPES = [WINDOW_NORM, SUBJECT_NORM, GLOBAL_NORM]
 
+# access to subject-wise dataloader
+SUBJECT_ID_KEY = "ID"
+DATA_LOADER_KEY = "data_loader"
+
 # self-defined typing hints
 NormalizationType = Optional[Literal[WINDOW_NORM, SUBJECT_NORM, GLOBAL_NORM]]
 NormMethod = Optional[Literal[Z_SCORE, MIN_MAX]]
@@ -299,7 +303,7 @@ class HARDataset(Dataset):
             sub_class_labels = [get_labels("_".join(file_name.split("_")[1:3]), verbose=False)[1]
                                 for file_name in subject_files]
 
-            # transform sub_class_labels to array (for convinient processing)
+            # transform sub_class_labels to array (for convenient processing)
             sub_class_labels = np.array(sub_class_labels)
 
             # get indices for balancing the instances
@@ -458,7 +462,7 @@ class HARDataset(Dataset):
 def get_train_test_data(dataset_path : str, batch_size: int,
                         load_sensors: List[str] = None, sensor_columns: List[str] = None, seq_len: int = 1,
                         norm_method: str = None, norm_type: str = None,
-                        balancing_type: str = None) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, int]:
+                        balancing_type: str = None) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, List[Dict[str, torch.utils.data.DataLoader]], int]:
     """
     gets the train and test data loaders
     :param dataset_path: the path to the dataset containing the data for training and testing
@@ -537,7 +541,32 @@ def get_train_test_data(dataset_path : str, batch_size: int,
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-    return train_dataloader, test_dataloader, num_channels
+    # list for holding the data loaders
+    test_dataloader_subjects = []
+
+    # cycle over the subject IDs
+    for subject_ID_test in subject_IDs_test:
+
+        # inform user
+        print(f"generating individual dataset for subject: {subject_ID_test}")
+
+        # generate dataset
+        subject_dataset = HARDataset(data_path=dataset_path,
+                                     subject_ids=[subject_ID_test],
+                                     load_sensors=load_sensors, sensor_columns=sensor_columns, seq_len=seq_len,
+                                     norm_method=norm_method, norm_type=norm_type, balancing_type=balancing_type)
+
+
+        # print the number of instances
+        print("num instances:", len(subject_dataset))
+
+        # pass the dataset to data loader
+        subject_data_loader = DataLoader(subject_dataset, batch_size=1, shuffle=False)
+
+        # add the data loader to the list (pass it wrapped in a dictionary to also store the subject ID)
+        test_dataloader_subjects.append({SUBJECT_ID_KEY: subject_ID_test, DATA_LOADER_KEY: subject_data_loader})
+
+    return train_dataloader, test_dataloader, test_dataloader_subjects, num_channels
 
 
 def generate_dataset(data_path: str, output_path: str, activities: List[str] = None, fs: int = 100, window_size: float = 1.5,

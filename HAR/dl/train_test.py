@@ -22,7 +22,9 @@ import torch.nn as nn
 import os
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+from typing import Dict, List
 
+from HAR.dl.dataset_generator import SUBJECT_ID_KEY, DATA_LOADER_KEY
 # internal imports
 from constants import MAIN_ACTIVITY_LABELS
 
@@ -40,6 +42,7 @@ VAL_LOSS_KEY = "val_loss"
 def run_model_training(
                        model: nn.Module, model_save_path: str,
                        train_dataloader: torch.utils.data.DataLoader, test_dataloader: torch.utils.data.DataLoader,
+                       test_dataloader_subject_wise: List[Dict[str, torch.utils.data.DataLoader]],
                        criterion: nn.Module, optimizer: torch.optim.Optimizer,
                        cuda_device: torch.device, num_epochs: int, patience: int = 5) -> dict[str, list[float]]:
     """
@@ -49,6 +52,7 @@ def run_model_training(
     :param model_save_path: file path to where the model is stored
     :param train_dataloader: PyTorch DataLoader for training data
     :param test_dataloader: PyTorch DataLoader for validation data
+    :param test_dataloader_subject_wise: Dictionary of subject-wise test dataloaders. Contains the subject ID and the corresponding dataloader
     :param criterion: loss function to be used
     :param optimizer: optimizer to be used
     :param cuda_device: CUDA device to run the model on
@@ -89,10 +93,32 @@ def run_model_training(
         performance_history[VAL_LOSS_KEY].append(val_loss)
         performance_history[VAL_ACC_KEY].append(val_acc)
 
+        # perform subject-wise testing
+        for subject_dict in test_dataloader_subject_wise:
+
+            # get the subject ID
+            subject_id = subject_dict[SUBJECT_ID_KEY]
+            test_dataloader_subject = subject_dict[DATA_LOADER_KEY]
+
+            # init list to hold values for the subject in the performance history
+            if not any(key.startswith(f"{subject_id}_") for key  in performance_history.keys()):
+
+                performance_history[f"{subject_id}_{VAL_LOSS_KEY}"] = []
+                performance_history[f"{subject_id}_{VAL_ACC_KEY}"] = []
+
+
+            # perform test/validation step
+            subject_val_loss, subject_val_acc = test_step(model, test_dataloader_subject, criterion, cuda_device)
+
+            # store subject-wise metrics in performance history
+            performance_history[f"{subject_id}_{VAL_ACC_KEY}"].append(subject_val_acc)
+            performance_history[f"{subject_id}_{VAL_LOSS_KEY}"].append(subject_val_loss)
+
+
         # check performance improvement
         if val_acc > best_val_acc:
 
-            # update best accuracy and epoch
+            # update the best accuracy and epoch
             best_val_acc = val_acc
             best_epoch = epoch
 

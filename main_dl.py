@@ -25,7 +25,7 @@ GENERATE_DATASET = False
 TRAIN_TEST_MODEL = True
 
 # definition of folder_path
-OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
+OUTPUT_FOLDER_PATH = 'E:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # argument parsing
@@ -119,11 +119,11 @@ if __name__ == '__main__':
                                                   "_".join(load_sensors)))
 
         print("training/testing model on generated dataset")
-        train_dataloader, test_dataloader, num_channels = get_train_test_data(dataset_path, batch_size=batch_size,
-                                                          load_sensors=load_sensors, sensor_columns=sensor_columns,
-                                                          seq_len=seq_len,
-                                                          norm_method=norm_method, norm_type=norm_type,
-                                                          balancing_type=balancing_type)
+        train_dataloader, test_dataloader, test_dataloader_subject_wise, num_channels = (
+            get_train_test_data(dataset_path, batch_size=batch_size,
+                                load_sensors=load_sensors, sensor_columns=sensor_columns,
+                                seq_len=seq_len, norm_method=norm_method, norm_type=norm_type,
+                                balancing_type=balancing_type))
 
         # set model variables and parameters
         har_model = HARLstm(num_features=int(num_channels*seq_len), hidden_size=hidden_size, num_layers=num_layers,
