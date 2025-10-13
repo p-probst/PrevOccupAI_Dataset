@@ -101,6 +101,8 @@ def run_model_training(
             subject_id = subject_dict[SUBJECT_ID_KEY]
             test_dataloader_subject = subject_dict[DATA_LOADER_KEY]
 
+            print(f"performing individual test on subject: {subject_id}")
+
             # init list to hold values for the subject in the performance history
             if not any(key.startswith(f"{subject_id}_") for key  in performance_history.keys()):
 

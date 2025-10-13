@@ -25,7 +25,7 @@ GENERATE_DATASET = False
 TRAIN_TEST_MODEL = True
 
 # definition of folder_path
-OUTPUT_FOLDER_PATH = 'E:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
+OUTPUT_FOLDER_PATH = 'G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # argument parsing
