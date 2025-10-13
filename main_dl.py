@@ -83,7 +83,6 @@ if __name__ == '__main__':
 
         # set dataset related parameters
         dataset_path = os.path.join(OUTPUT_FOLDER_PATH, DL_DATASET, f'w_{window_size_samples}')
-        model_type = parsed_args.model_type
         load_sensors = parsed_args.load_sensors
         seq_len = parsed_args.seq_len
         norm_method = parsed_args.norm_method
@@ -94,6 +93,7 @@ if __name__ == '__main__':
         if not load_sensors: load_sensors = VALID_SENSORS
 
         # set model related parameters
+        model_type = parsed_args.model_type
         num_epochs = parsed_args.num_epochs
         batch_size = parsed_args.batch_size
         hidden_size = parsed_args.hidden_size
@@ -116,7 +116,7 @@ if __name__ == '__main__':
         project_path = os.path.dirname(os.path.abspath(__file__))
         model_save_path = create_dir(project_path,
                                      os.path.join("HAR", "dl",
-                                                  f"trained_{model_type}_w_size_{window_size_samples}_seq_len{seq_len}",
+                                                  f"trained_{model_type}_wsize_{window_size_samples}_seqlen_{seq_len}_batchsize_{batch_size}",
                                                   f"nm_{norm_type}", f"nt_{norm_method}",
                                                   "_".join(load_sensors)))
 
@@ -132,7 +132,10 @@ if __name__ == '__main__':
                            num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
         # generate model name
-        model_name = f"{har_model.__class__.__name__}_{model_type}_hs{har_model.hidden_size}_nl{har_model.num_layers}_do{int(dropout*100)}"
+        model_name = f"{har_model.__class__.__name__}_{har_model.model_type}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(har_model.dropout * 100)}"
+
+        print(f"Running model: {model_name}")
+
 
         # put model on cuda device
         har_model.to(cuda_device)
@@ -142,7 +145,7 @@ if __name__ == '__main__':
         optimizer = optim.Adam(har_model.parameters(), lr=lr)
 
         # run the training loop
-        performance_history = run_model_training(model=har_model, model_save_path=model_save_path,
+        performance_history = run_model_training(model=har_model, model_save_path=model_save_path, model_name=model_name,
                                                  train_dataloader=train_dataloader, test_dataloader=test_dataloader,
                                                  criterion=criterion, optimizer=optimizer, cuda_device=cuda_device,
                                                  num_epochs=num_epochs, patience=10)
