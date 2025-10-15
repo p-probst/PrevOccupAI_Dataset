@@ -1,7 +1,5 @@
 import os
 import argparse
-from typing import List
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,10 +9,11 @@ print(f"CUDA available: {torch.cuda.is_available()}")
 
 
 # internal imports
-from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY, VALID_SENSORS, RANDOM_SEED
+from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY, VALID_SENSORS, \
+    RANDOM_SEED, CNN_LSTM
 from HAR.dl import generate_dataset, get_train_test_data, run_model_training, select_idle_gpu, configure_seed
 from HAR.dl import DL_DATASET
-from HAR.dl import HARRnn
+from HAR.dl import HARRnn, CNNLSTM
 from HAR.dl.train_test import plot_performance_history
 from file_utils import create_dir, load_json_file
 
@@ -45,9 +44,10 @@ parser.add_argument('--norm_type', default='subject', choices=['global', 'subjec
 parser.add_argument('--balancing_type', default='main_classes', choices=['main_classes', 'sub_classes', None], help="The balancing type (as str).")
 
 # (3) model related parameters
-parser.add_argument('--model_type', default='lstm', type=str, help="The model to be trained", choices=['lstm', 'gru'])
+parser.add_argument('--model_type', default='lstm', type=str, help="The model to be trained", choices=['lstm', 'gru', 'cnnlstm'])
 parser.add_argument('--num_epochs', default=40, type=int, help="The number of epochs used in model training.")
 parser.add_argument('--batch_size', default=64, type=int, help="The batch size used in model training.")
+parser.add_argument('--filters', nargs="+", default=[32, 64], type=int, help="A list of integers with the number of filters to be used on the first and second convolutional layers of the CNN LSTM, respectively, e.g., [32, 64]")
 parser.add_argument('--hidden_size', default=128, type=int, help="The hidden size used in RNN models (LSTM, GRU).")
 parser.add_argument('--num_layers', default=1, type=int, help="The number of layers used in RNN models (LSTM, GRU).")
 parser.add_argument('--dropout', default=0.3, type=float, help="The dropout rate used during model training.")
@@ -127,9 +127,18 @@ if __name__ == '__main__':
                                                           norm_method=norm_method, norm_type=norm_type,
                                                           balancing_type=balancing_type)
 
-        # set model variables and parameters
-        har_model = HARRnn(model_type=model_type, num_features=int(num_channels * seq_len), hidden_size=hidden_size, num_layers=num_layers,
-                           num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
+        if model_type == CNN_LSTM:
+
+            # obtain the filters for the CNN
+            filters = parsed_args.filters
+
+            # set CNN LSTM model variables and parameters
+            har_model = CNNLSTM(num_features=num_channels, filters=filters, hidden_size=hidden_size, num_layers=num_layers, num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
+
+        else:
+            # set model variables and parameters
+            har_model = HARRnn(model_type=model_type, num_features=int(num_channels * seq_len), hidden_size=hidden_size, num_layers=num_layers,
+                               num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
         # generate model name
         model_name = f"{har_model.__class__.__name__}_{har_model.model_type}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(har_model.dropout * 100)}"
