@@ -44,7 +44,7 @@ parser.add_argument('--norm_type', default='subject', choices=['global', 'subjec
 parser.add_argument('--balancing_type', default='main_classes', choices=['main_classes', 'sub_classes', None], help="The balancing type (as str).")
 
 # (3) model related parameters
-parser.add_argument('--model_type', default='lstm', type=str, help="The model to be trained", choices=['lstm', 'gru', 'cnnlstm'])
+parser.add_argument('--model_type', default='cnnlstm', type=str, help="The model to be trained", choices=['lstm', 'gru', 'cnnlstm'])
 parser.add_argument('--num_epochs', default=40, type=int, help="The number of epochs used in model training.")
 parser.add_argument('--batch_size', default=64, type=int, help="The batch size used in model training.")
 parser.add_argument('--filters', nargs="+", default=[32, 64], type=int, help="A list of integers with the number of filters to be used on the first and second convolutional layers of the CNN LSTM, respectively, e.g., [32, 64]")
@@ -116,7 +116,7 @@ if __name__ == '__main__':
         project_path = os.path.dirname(os.path.abspath(__file__))
         model_save_path = create_dir(project_path,
                                      os.path.join("HAR", "dl",
-                                                  f"trained_{model_type}_wsize_{window_size_samples}_seqlen_{seq_len}_batchsize_{batch_size}",
+                                                  f"trained_{model_type}_wsize-{window_size_samples}_seqlen_{seq_len}_batchsize_{batch_size}",
                                                   f"nm_{norm_type}", f"nt_{norm_method}",
                                                   "_".join(load_sensors)))
 
@@ -135,13 +135,16 @@ if __name__ == '__main__':
             # set CNN LSTM model variables and parameters
             har_model = CNNLSTM(num_features=num_channels, filters=filters, hidden_size=hidden_size, num_layers=num_layers, num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
+            # set model name for the CNN-LSTM
+            model_name = f"{har_model.__class__.__name__}_filters-{filters[0]}-{filters[1]}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(har_model.dropout * 100)}"
+
         else:
             # set model variables and parameters
             har_model = HARRnn(model_type=model_type, num_features=int(num_channels * seq_len), hidden_size=hidden_size, num_layers=num_layers,
                                num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
-        # generate model name
-        model_name = f"{har_model.__class__.__name__}_{har_model.model_type}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(har_model.dropout * 100)}"
+            # generate model name
+            model_name = f"{har_model.__class__.__name__}_{har_model.model_type}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(har_model.dropout * 100)}"
 
         print(f"Running model: {model_name}")
 

@@ -13,17 +13,14 @@ SENSORS=("ACC" "GYR" "MAG" "ROT")
 WINDOW_SIZES=(1 2.5 5)
 
 # list of filters for the 2 convolutional layers, respectively
-FILTER_SET=(32 64)
+FILTER_SET=(64 128)
 
 # Outer loop over window sizes
 for WIN in "${WINDOW_SIZES[@]}"; do
     echo "=== Running experiments with window_size_s=$WIN ==="
 
-    # Compute seq_len = window_size_s * 100
-    SEQ_LEN=$(echo "$WIN * 100" | bc)
-
-    # convert to int
-    SEQ_LEN=${SEQ_LEN%.*}
+    # sequence length is the whole window for the CNN
+    SEQ_LEN=$(awk "BEGIN {printf \"%d\", $WIN * 100}")
 
     # Reset ARGS for each window size
     ARGS=()
@@ -33,6 +30,6 @@ for WIN in "${WINDOW_SIZES[@]}"; do
         ARGS+=("$SENSOR")  # append the sensor to the growing list
 
         echo "Running with window_size_s=$WIN and sensors: ${ARGS[*]}"
-        "$PYTHON" "$SCRIPT" --window_size_s "$WIN" --load_sensors "${ARGS[@]}" --filters "${FILTER_SET[@]}"  --model_type "cnnlstm" --seq_len "$SEQ_LEN" --norm_method "z-score" --norm_type subject --hidden_size 128 --batch_size 128
+        "$PYTHON" "$SCRIPT" --window_size_s "$WIN" --seq_len "$SEQ_LEN" --load_sensors "${ARGS[@]}" --filters "${FILTER_SET[@]}"  --model_type "cnnlstm" --norm_method "z-score" --norm_type subject --hidden_size 128 --batch_size 128
     done
 done
