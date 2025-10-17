@@ -16,7 +16,7 @@ None
 # ------------------------------------------------------------------------------------------------------------------- #
 import torch
 import torch.nn as nn
-from typing import List
+from typing import List, Tuple
 
 # internal imports
 from constants import LSTM, GRU
@@ -147,7 +147,7 @@ class CNNLSTM(nn.Module):
         # model architecture
         # (1) first convolutional layer
         self.conv1 = nn.Conv1d(
-            in_channels=num_features,
+            in_channels=1,
             out_channels=filters[0],
             kernel_size=3
         )
@@ -220,3 +220,34 @@ class CNNLSTM(nn.Module):
 
         return logits
 
+
+class CNNLSTM2d(nn.Module):
+
+    def __init__(self, num_features: int, filters: List[int], kernel_size: Tuple[int, int], stride: Tuple[int, int],
+                 hidden_size: int, num_layers: int, num_classes: int, dropout: float):
+
+        # call to super class
+        super().__init__()
+
+        # init class variables
+        self.num_features = num_features
+        self.filters = filters
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.num_classes = num_classes
+        self.dropout = dropout
+
+        # model architecture
+        # (1) 2D convolutional layer
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=filters[0], kernel_size=kernel_size, stride=stride)
+
+        # ReLU activation function
+        self.relu = nn.ReLU()
+
+        # Max pooling layer
+        # self.pool = nn.MaxPool2d(kernel_size=)
+
+        # # (2) 2D convolutional layer
+        # self.conv2 = nn.Conv2d(in)

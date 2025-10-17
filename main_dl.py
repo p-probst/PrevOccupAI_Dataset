@@ -116,9 +116,9 @@ if __name__ == '__main__':
         project_path = os.path.dirname(os.path.abspath(__file__))
         model_save_path = create_dir(project_path,
                                      os.path.join("HAR", "dl",
-                                                  f"trained_{model_type}_wsize-{window_size_samples}_seqlen_{seq_len}_batchsize_{batch_size}",
-                                                  f"nm_{norm_type}", f"nt_{norm_method}",
-                                                  "_".join(load_sensors)))
+                                          f"trained_models_wsize-{window_size_samples}_seqlen-{seq_len}_batchsize-{batch_size}",
+                                          f"nm_{norm_type}", f"nt_{norm_method}",
+                                          "_".join(load_sensors)))
 
         print("training/testing model on generated dataset")
         train_dataloader, test_dataloader, num_channels = get_train_test_data(dataset_path, batch_size=batch_size,
@@ -136,9 +136,10 @@ if __name__ == '__main__':
             har_model = CNNLSTM(num_features=num_channels, filters=filters, hidden_size=hidden_size, num_layers=num_layers, num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
             # set model name for the CNN-LSTM
-            model_name = f"{har_model.__class__.__name__}_filters-{filters[0]}-{filters[1]}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(har_model.dropout * 100)}"
+            model_name = f"{har_model.__class__.__name__}_fl1-{filters[0]}_fl2-{filters[1]}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(har_model.dropout * 100)}"
 
         else:
+
             # set model variables and parameters
             har_model = HARRnn(model_type=model_type, num_features=int(num_channels * seq_len), hidden_size=hidden_size, num_layers=num_layers,
                                num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
