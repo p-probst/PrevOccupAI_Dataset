@@ -15,7 +15,7 @@ from HAR.dl import generate_dataset, get_train_test_data, run_model_training, se
 from HAR.dl import DL_DATASET
 from HAR.dl import HARRnn, CNNLSTM, CNNLSTM2d
 from HAR.dl.train_test import plot_performance_history
-from file_utils import create_dir, load_json_file
+from file_utils import create_dir, load_json_file, parse_pairs
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # constants
@@ -48,10 +48,10 @@ parser.add_argument('--model_type', default='cnnlstm2d', type=str, help="The mod
 parser.add_argument('--num_epochs', default=40, type=int, help="The number of epochs used in model training.")
 parser.add_argument('--batch_size', default=64, type=int, help="The batch size used in model training.")
 parser.add_argument('--filters', nargs="+", default=[64, 128], type=int, help="A list of integers with the number of filters to be used on the first and second convolutional layers of the CNN LSTM, respectively, e.g., [32, 64]")
-parser.add_argument('--kernel_size_conv', nargs='+', default=[(1,3), (3,3)], help='List of tuples regarding the kernel size for the first and second convolutional layers, respectively')
-parser.add_argument('--stride_conv', nargs='+', default=[(1,1), (1,1)], help='List of tuples regarding the stride for the first and second convolutional layers, respectively')
-parser.add_argument('--kernel_size_pool', nargs='+', default=[(1,2), (1,2)], help='List of tuples regarding the kernel size for the first and second pooling layers, respectively')
-parser.add_argument('--stride_pool', nargs='+', default=[(1,2), (1,2)], help='List of tuples regarding the stride for the first and second pooling layers, respectively')
+parser.add_argument('--kernel_size_conv', nargs='+', default=[(1,3), (3,3)], type=int, help='List of tuples regarding the kernel size for the first and second convolutional layers, respectively')
+parser.add_argument('--stride_conv', nargs='+', default=[(1,1), (1,1)], type=int, help='List of tuples regarding the stride for the first and second convolutional layers, respectively')
+parser.add_argument('--kernel_size_pool', nargs='+', default=[(1,2), (1,2)], type=int, help='List of tuples regarding the kernel size for the first and second pooling layers, respectively')
+parser.add_argument('--stride_pool', nargs='+', default=[(1,2), (1,2)], type=int, help='List of tuples regarding the stride for the first and second pooling layers, respectively')
 parser.add_argument('--hidden_size', default=128, type=int, help="The hidden size used in RNN models (LSTM, GRU).")
 parser.add_argument('--num_layers', default=1, type=int, help="The number of layers used in RNN models (LSTM, GRU).")
 parser.add_argument('--dropout', default=0.3, type=float, help="The dropout rate used during model training.")
@@ -146,10 +146,10 @@ if __name__ == '__main__':
 
             # obtain the parameters for the 2D CNN-LSTM
             filters = parsed_args.filters
-            kernel_size_conv = parsed_args.kernel_size_conv
-            stride_conv = parsed_args.stride_conv
-            kernel_size_pool = parsed_args.kernel_size_pool
-            stride_pool = parsed_args.stride.pool
+            kernel_size_conv = parse_pairs(parsed_args.kernel_size_conv)
+            stride_conv = parse_pairs(parsed_args.stride_conv)
+            kernel_size_pool = parse_pairs(parsed_args.kernel_size_pool)
+            stride_pool = parse_pairs(parsed_args.stride_pool)
 
             # set 2D CNN LSTM variables and parameters
             har_model = CNNLSTM2d(num_timesteps=num_timesteps, filters=filters, kernel_size_conv=kernel_size_conv,

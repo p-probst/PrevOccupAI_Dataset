@@ -155,6 +155,15 @@ def save_json_file(json_dict: Dict[Any, Any], file_name: str, folder_path: str) 
         json.dump(json_dict, json_file)
 
 
+def parse_pairs(flat_list: List[int]) -> List[Tuple[int, int]]:
+    """
+    Convert a flat list of ints like [1,3,3,3] into list of tuples [(1,3),(3,3)]
+    """
+    # Convert strings to ints if needed
+    flat_list = [int(x) for x in flat_list]
+
+    # convert into list of paired Tuples
+    return [(flat_list[i], flat_list[i+1]) for i in range(0, len(flat_list), 2)]
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #

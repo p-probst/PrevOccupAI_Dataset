@@ -224,9 +224,9 @@ class CNNLSTM(nn.Module):
 
 class CNNLSTM2d(nn.Module):
 
-    def __init__(self, num_timesteps: int, filters: List[int], kernel_size_conv: List[Tuple[int, int], Tuple[int, int]],
-                 kernel_size_pool: List[Tuple[int, int], Tuple[int, int]], stride_pool: List[Tuple[int, int], Tuple[int, int]],
-                 stride_conv: List[Tuple[int, int], Tuple[int, int]], hidden_size: int, num_layers: int, num_classes: int, dropout: float):
+    def __init__(self, num_timesteps: int, filters: List[int], kernel_size_conv: List[Tuple[int, int]],
+                 kernel_size_pool: List[Tuple[int, int]], stride_pool: List[Tuple[int, int]],
+                 stride_conv: List[Tuple[int, int]], hidden_size: int, num_layers: int, num_classes: int, dropout: float):
         """
         2D CNN-LSTM model with the following architecture:
         (1) 2D convolutional layer
@@ -306,15 +306,18 @@ class CNNLSTM2d(nn.Module):
         x = x.transpose(2,3)
 
         # input shape to the 2D CNN: [batch_size, num_timesteps, num_channels, sequence_length]
-        # output shape: [batch_size, channels_out(num_timesteps*f1), height, width]
-        x = self.pool(self.relu(self.conv1(x)))
+        # output shape: [batch_size, f1, height, width]
+        x = self.pool1(self.relu(self.conv1(x)))
 
         # pass the data through the second convolutional layer, ReLU, and max pooling
-        # output shape: [batch_size, channels_out(num_timesteps*f1*f2), height, width]
-        x = self.pool(self.relu(self.conv2(x)))
+        # output shape: [batch_size, f2, height', width']
+        x = self.pool2(self.relu(self.conv2(x)))
 
-        # reshape to [batch_size, channels_out, height * width]
+        # reshape to [batch_size, f2, height' * width']
         x = x.reshape(x.size(0), x.size(1), -1)
+
+        # reshape to [batch_size, H'* W', f2]
+        x = x.transpose(1, 2)
 
         # pass though the LSTM cell
         # output shape: [batch_size, time_step, hidden_size]
