@@ -123,3 +123,4 @@ RANDOM_SEED = 42
 LSTM = 'lstm'
 GRU = 'gru'
 CNN_LSTM = 'cnnlstm'
+CNN_LSTM_2D = 'cnnlstm2d'

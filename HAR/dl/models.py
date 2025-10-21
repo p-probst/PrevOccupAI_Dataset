@@ -224,7 +224,7 @@ class CNNLSTM(nn.Module):
 
 class CNNLSTM2d(nn.Module):
 
-    def __init__(self, timesteps: int, filters: List[int], kernel_size_conv: List[Tuple[int, int], Tuple[int, int]],
+    def __init__(self, num_timesteps: int, filters: List[int], kernel_size_conv: List[Tuple[int, int], Tuple[int, int]],
                  kernel_size_pool: List[Tuple[int, int], Tuple[int, int]], stride_pool: List[Tuple[int, int], Tuple[int, int]],
                  stride_conv: List[Tuple[int, int], Tuple[int, int]], hidden_size: int, num_layers: int, num_classes: int, dropout: float):
         """
@@ -241,7 +241,7 @@ class CNNLSTM2d(nn.Module):
 
         The model assumes the inputs for the 2D CNN-LSTM of shapes [batch_size, time_steps, sequence_length, num_channels].
 
-        :param timesteps: Number of in_channels for the first convolutional layer, should correspond to the number of subsequences
+        :param num_timesteps: Number of in_channels for the first convolutional layer, should correspond to the number of subsequences
         :param filters: Number of filters for the first and second convolutional layers, respectively.
         :param kernel_size_conv: List with the tuples corresponding to the kernel size for both convolutional layers, in order.
         :param kernel_size_pool: List with the tuples corresponding to the kernel size for both pooling layers, in order.
@@ -256,7 +256,7 @@ class CNNLSTM2d(nn.Module):
         super().__init__()
 
         # init class variables
-        self.timesteps = timesteps
+        self.timesteps = num_timesteps
         self.filters = filters
         self.kernel_size_conv = kernel_size_conv
         self.stride_conv = stride_conv
@@ -269,7 +269,7 @@ class CNNLSTM2d(nn.Module):
 
         # model architecture
         # (1) 2D convolutional layer
-        self.conv1 = nn.Conv2d(in_channels=timesteps, out_channels=filters[0], kernel_size=kernel_size_conv[0], stride=stride_conv[0])
+        self.conv1 = nn.Conv2d(in_channels=num_timesteps, out_channels=filters[0], kernel_size=kernel_size_conv[0], stride=stride_conv[0])
 
         # ReLU activation function
         self.relu = nn.ReLU()
@@ -298,7 +298,38 @@ class CNNLSTM2d(nn.Module):
     def forward(self, x: torch.tensor) -> torch.tensor:
         """
         forward pass
-        :param x: input batch of size [batch_size, time_steps, sequence_length, num_channels]
+        :param x: input batch of size [batch_size, num_timesteps, sequence_length, num_channels]
         :return: output of shape [batch_size, num_classes]
         """
 
+        # transpose num_channels and sequence length for the convolutional to occur time-wise
+        x = x.transpose(2,3)
+
+        # input shape to the 2D CNN: [batch_size, num_timesteps, num_channels, sequence_length]
+        # output shape: [batch_size, channels_out(num_timesteps*f1), height, width]
+        x = self.pool(self.relu(self.conv1(x)))
+
+        # pass the data through the second convolutional layer, ReLU, and max pooling
+        # output shape: [batch_size, channels_out(num_timesteps*f1*f2), height, width]
+        x = self.pool(self.relu(self.conv2(x)))
+
+        # reshape to [batch_size, channels_out, height * width]
+        x = x.reshape(x.size(0), x.size(1), -1)
+
+        # pass though the LSTM cell
+        # output shape: [batch_size, time_step, hidden_size]
+        out, _ = self.lstm(x)
+
+        # obtain the last output (many-to-one classification)
+        # shape last_out: [batch_size, hidden_size]
+        last_out = out[:, -1, :]
+
+        # pass the output through the dropout layer
+        # no changes in shape
+        last_out = self.dropout_layer(last_out)
+
+        # pass the tensors through the classification layer
+        # shape logits: [batch_size, num_classes]
+        logits = self.fc_layer(last_out)
+
+        return logits
