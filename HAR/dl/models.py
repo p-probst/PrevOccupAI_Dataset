@@ -224,7 +224,7 @@ class CNNLSTM(nn.Module):
 
 class CNNLSTM2d(nn.Module):
 
-    def __init__(self, num_timesteps: int, filters: List[int], kernel_size_conv: List[Tuple[int, int]],
+    def __init__(self, num_features: int, seq_len: int, filters: List[int], kernel_size_conv: List[Tuple[int, int]],
                  kernel_size_pool: List[Tuple[int, int]], stride_pool: List[Tuple[int, int]],
                  stride_conv: List[Tuple[int, int]], hidden_size: int, num_layers: int, num_classes: int, dropout: float):
         """
@@ -241,7 +241,8 @@ class CNNLSTM2d(nn.Module):
 
         The model assumes the inputs for the 2D CNN-LSTM of shapes [batch_size, time_steps, sequence_length, num_channels].
 
-        :param num_timesteps: Number of in_channels for the first convolutional layer, should correspond to the number of subsequences
+        :param num_features: number of sensor channels.
+        :param seq_len: the size of the window to window the sample into sub-sequences
         :param filters: Number of filters for the first and second convolutional layers, respectively.
         :param kernel_size_conv: List with the tuples corresponding to the kernel size for both convolutional layers, in order.
         :param kernel_size_pool: List with the tuples corresponding to the kernel size for both pooling layers, in order.
@@ -256,7 +257,8 @@ class CNNLSTM2d(nn.Module):
         super().__init__()
 
         # init class variables
-        self.timesteps = num_timesteps
+        self.num_features = num_features
+        self.seq_len = seq_len
         self.filters = filters
         self.kernel_size_conv = kernel_size_conv
         self.stride_conv = stride_conv
@@ -269,7 +271,7 @@ class CNNLSTM2d(nn.Module):
 
         # model architecture
         # (1) 2D convolutional layer
-        self.conv1 = nn.Conv2d(in_channels=num_timesteps, out_channels=filters[0], kernel_size=kernel_size_conv[0], stride=stride_conv[0])
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=filters[0], kernel_size=kernel_size_conv[0], stride=stride_conv[0])
 
         # ReLU activation function
         self.relu = nn.ReLU()
@@ -283,9 +285,12 @@ class CNNLSTM2d(nn.Module):
         # Max pooling layer
         self.pool2 = nn.MaxPool2d(kernel_size=kernel_size_pool[1], stride=stride_pool[1])
 
+        # compute CNN output size dynamically
+        cnn_output_size = self._get_cnn_output_size(num_features=num_features, seq_len=seq_len)
+
         # (3) LSTM layer
         self.lstm = nn.LSTM(
-            input_size=filters[1], hidden_size=hidden_size, num_layers=num_layers,
+            input_size=cnn_output_size, hidden_size=hidden_size, num_layers=num_layers,
             dropout=dropout if num_layers > 1 else 0.0, batch_first=True
         )
 
@@ -295,17 +300,52 @@ class CNNLSTM2d(nn.Module):
         # (5) fully connected layer
         self.fc_layer = nn.Linear(hidden_size, num_classes)
 
+
+    def _get_cnn_output_size(self, num_features: int, seq_len: int) -> int:
+        """
+        Computes the total number of features produced by the 2D CNN, given an input of shape:
+        [batch_size, 1 (num_channels), num_features (height), seq_len (width)].
+        This gives the input_size to the LSTM.
+
+        :param num_features: number of sensor channels
+        :param seq_len: the size of the window to window the sample into sub-sequences
+        :return: the output size of the CNN (input size to the LSTM)
+        """
+
+        # disable gradients
+        with torch.no_grad():
+
+            # create dummy tensor that mimics a CNN input of shape: [batch, num_channels, num_features (H), seq_len (W)]
+            dummy_tensor = torch.zeros(1, 1, num_features, seq_len)
+
+            # Pass the dummy tensor through the first convolutional, relu, and pooling layers
+            out = self.pool1(self.relu(self.conv1(dummy_tensor)))
+
+            # Pass the dummy tensor through the second convolutional, relu, and pooling layers
+            # output after the second conv layer: [1, f2, H_out, W_out]
+            out = self.pool2(self.relu(self.conv2(out)))
+
+            # calculate the total number of elements in the tensor - will be the input size to the LSTM
+            # f2 * H_out * W_out
+            lstm_input_size = out.numel()
+
+        return lstm_input_size
+
+
     def forward(self, x: torch.tensor) -> torch.tensor:
         """
         forward pass
-        :param x: input batch of size [batch_size, num_timesteps, sequence_length, num_channels]
+        :param x: input batch of size [batch_size, timesteps, sequence_length, num_features]
         :return: output of shape [batch_size, num_classes]
         """
 
-        # transpose num_channels and sequence length for the convolutional to occur time-wise
-        x = x.transpose(2,3)
+        # get tensor dimensions
+        batch_size, timesteps, seq_len, num_features = x.size(0), x.size(1), x.size(2), x.size(3)
 
-        # input shape to the 2D CNN: [batch_size, num_timesteps, num_channels, sequence_length]
+        # merge batch and timesteps dims for CNN: [batch_size * num_timesteps, num_channels = 1, num_features, sequence_length]
+        x = x.reshape(batch_size * timesteps, 1, num_features, seq_len)
+
+        # pass the data through the first convolutional layer, ReLU, and max pooling
         # output shape: [batch_size, f1, height, width]
         x = self.pool1(self.relu(self.conv1(x)))
 
@@ -313,11 +353,11 @@ class CNNLSTM2d(nn.Module):
         # output shape: [batch_size, f2, height', width']
         x = self.pool2(self.relu(self.conv2(x)))
 
-        # reshape to [batch_size, f2, height' * width']
-        x = x.reshape(x.size(0), x.size(1), -1)
+        # flatten num_filters * Hout * Wout
+        x = x.reshape(batch_size * timesteps, -1)
 
-        # reshape to [batch_size, H'* W', f2]
-        x = x.transpose(1, 2)
+        # unmerge batch size and timesteps back to the LSTM input: [batch_size, timesteps, f2 * Hout * Wout]
+        x = x.reshape(batch_size, timesteps, -1)
 
         # pass though the LSTM cell
         # output shape: [batch_size, time_step, hidden_size]

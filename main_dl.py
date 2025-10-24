@@ -35,7 +35,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--data_path', default=OUTPUT_FOLDER_PATH, help="Path to dataset.")
 
 # (2) dataset
-parser.add_argument('--fs', default=500, type=int, help="The sampling frequency used during data acquisition.")
+parser.add_argument('--fs', default=100, type=int, help="The sampling frequency used during data acquisition.")
 parser.add_argument('--window_size_s', default=5, type=float, help="The window size (in seconds) for sequence windowing. Can be either int or float.")
 parser.add_argument('--seq_len', default=10, type=int, help="The window size (in samples) for sub-sequencing input samples. Should be a factor of window_size (in samples).")
 parser.add_argument('--load_sensors', nargs="+", default=None, help="The sensor to be loaded (as List[str]), e.g., [\"ACC\", \"GYR\"].")
@@ -152,7 +152,7 @@ if __name__ == '__main__':
             stride_pool = parse_pairs(parsed_args.stride_pool)
 
             # set 2D CNN LSTM variables and parameters
-            har_model = CNNLSTM2d(num_timesteps=num_timesteps, filters=filters, kernel_size_conv=kernel_size_conv,
+            har_model = CNNLSTM2d(num_features=num_channels, seq_len=seq_len, filters=filters, kernel_size_conv=kernel_size_conv,
                                   kernel_size_pool=kernel_size_pool, stride_pool=stride_pool, stride_conv=stride_conv,
                                   hidden_size=hidden_size, num_layers=num_layers, num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
 
