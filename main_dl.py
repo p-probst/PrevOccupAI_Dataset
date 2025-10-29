@@ -2,31 +2,20 @@ import os
 import argparse
 from typing import List
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import pandas as pd
-from sklearn.metrics import accuracy_score
-
-from HAR.dl.dataset_generator import GLOBAL_STATS, SENSOR_MEAN, SENSOR_VAR
-from HAR.ml.load import load_labels_from_log
-from HAR.post_process import expand_classification
-from HAR.post_processing_optimizer import dl_optimize_post_processing
-from feature_extractor import trim_data, get_sliding_windows_indices, window_data
-from raw_data_processor.load_sensor_data import load_data_from_same_recording
 
 print(f"CUDA available: {torch.cuda.is_available()}")
 
 
 # internal imports
-from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY, VALID_SENSORS, \
-    RANDOM_SEED, TXT, IMPULSE_LENGTH
+from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY, VALID_SENSORS, RANDOM_SEED
 from HAR.dl import generate_dataset, get_train_test_data, run_model_training, select_idle_gpu, configure_seed
 from HAR.dl import DL_DATASET
 from HAR.dl import HARRnn
 from HAR.dl.train_test import plot_performance_history
-from HAR.dl.utils import load_har_model
 from file_utils import create_dir, load_json_file
 
 # ------------------------------------------------------------------------------------------------------------------- #
