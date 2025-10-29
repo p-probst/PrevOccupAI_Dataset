@@ -18,14 +18,61 @@ None
 import numpy as np
 from pyquaternion import Quaternion
 from tqdm import tqdm
+from typing import List
 
 # internal imports
 from .filters import median_and_lowpass_filter, gravitational_filter
+from constants import ACC, GYR, MAG, VALID_SENSORS
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
+def pre_process_sensors(data_array: np.array, sensor_names: List[str], fs=100) -> np.array:
+    """
+    Pre-processes the sensors contained in data_array according to their sensor type.
+    :param data_array: the loaded data
+    :param sensor_names: the names of the sensors contained in the data array
+    :return:
+    """
+
+    # make a copy to not override the original data
+    processed_data = data_array.copy()
+
+    # process each sensor
+    for valid_sensor in VALID_SENSORS:
+
+        # get the positions of the sensor in the sensor_names
+        sensor_cols = [col for col, sensor_name in enumerate(sensor_names) if valid_sensor in sensor_name]
+
+        if sensor_cols:
+
+            print(f"--> pre-processing {valid_sensor} sensor")
+            # acc pre-processing
+            if valid_sensor == ACC:
+
+                processed_data[:, sensor_cols] = pre_process_inertial_data(processed_data[:, sensor_cols], is_acc=True,
+                                                                           fs=fs)
+
+            # gyr and mag pre-processing
+            elif valid_sensor in [GYR, MAG]:
+
+                processed_data[:, sensor_cols] = pre_process_inertial_data(processed_data[:, sensor_cols], is_acc=False,
+                                                                           fs=fs)
+
+            # rotation vector pre-processing
+            else:
+
+                processed_data[:, sensor_cols] = slerp_smoothing(processed_data[:, sensor_cols], 0.3,
+                                                                 scalar_first=False,
+                                                                 return_numpy=True, return_scalar_first=False)
+        else:
+
+            print(f"The {valid_sensor} sensor is not in the loaded data. Skipping the pre-processing of this sensor.")
+
+    return processed_data
+
+
 def pre_process_inertial_data(sensor_data: np.array, is_acc: bool = False, fs: int = 100, normalize: bool = False) -> np.array:
     """
     Applies the pre-processing pipeline of "A Public Domain Dataset for Human Activity Recognition Using Smartphones"

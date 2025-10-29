@@ -34,7 +34,7 @@ from pathlib import Path
 from constants import VALID_ACTIVITIES, \
     VALID_FILE_TYPES, NPY, CSV, \
     VALID_SENSORS, ACC, GYR, MAG, ROT, \
-    SENSOR_COLS_JSON, LOADED_SENSORS_KEY, CLASS_INSTANCES_JSON, MAIN_LABEL_KEY, SUB_LABEL_KEY
+    SENSOR_COLS_JSON, LOADED_SENSORS_KEY, CLASS_INSTANCES_JSON, MAIN_LABEL_KEY, SUB_LABEL_KEY, IMPULSE_LENGTH
 from raw_data_processor import slerp_smoothing, pre_process_inertial_data
 from .window import get_sliding_windows_indices, window_data, window_scaling, validate_scaler_input, trim_data
 from .quaternion_features import geodesic_distance
@@ -168,7 +168,7 @@ def extract_features(data_path: str, features_data_path: str, activities: List[s
                     data = _pre_process_sensors(data, sensor_names)
 
                     # remove impulse response
-                    data = data[250:, :]
+                    data = data[IMPULSE_LENGTH:, :]
 
                     # (3) window the data
                     # (since all are of the same length it is possible to use just one sensor channel)
@@ -333,8 +333,8 @@ def pre_process_signals(subject_data: pd.DataFrame, sensor_names: List[str], w_s
     sensor_data = _pre_process_sensors(sensor_data, sensor_names)
 
     # remove impulse response
-    sensor_data = sensor_data[250:,:]
-    labels = labels[250:]
+    sensor_data = sensor_data[IMPULSE_LENGTH:,:]
+    labels = labels[IMPULSE_LENGTH:]
 
     # trim the data to accommodate full windowing
     sensor_data, to_trim = trim_data(sensor_data, w_size=w_size, fs=fs)

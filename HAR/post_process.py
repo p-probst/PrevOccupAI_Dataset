@@ -137,7 +137,7 @@ def expand_classification(clf_result: np.ndarray, w_size: float, fs: int) -> Lis
     Converts the time column from the android timestamp which is in nanoseconds to seconds.
     Parameters.
     :param clf_result: list with the classifier prediction where each entry is the prediction made for a window.
-    :param w_size: the window size in samples that was used to make the classification.
+    :param w_size: the window size in seconds.
     :param fs: the sampling frequency of the signal that was classified.
     :return: the expanded classification results.
     """

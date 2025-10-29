@@ -24,7 +24,7 @@ _calc_global_stats(...): Calculates global statistics (over all subjects).
 # ------------------------------------------------------------------------------------------------------------------- #
 # imports
 # ------------------------------------------------------------------------------------------------------------------- #
-from typing import List, Dict, Union, Optional, Literal, Tuple
+from typing import List, Dict, Union, Optional, Literal, Tuple, Any
 import os
 import numpy as np
 import pandas as pd
@@ -37,12 +37,12 @@ from sklearn.model_selection import GroupShuffleSplit
 # internal imports
 from constants import (NPY, VALID_ACTIVITIES, VALID_SENSORS, ACC, GYR, MAG, MAIN_ACTIVITY_LABELS,
                        SUB_ACTIVITIES_STAND_LABELS, SUB_ACTIVITIES_WALK_LABELS, SUB_ACTIVITY_LABELS,
-                       CLASS_INSTANCES_JSON, SUBJECT_STATS_JSON, RANDOM_SEED)
+                       CLASS_INSTANCES_JSON, SUBJECT_STATS_JSON, RANDOM_SEED, IMPULSE_LENGTH)
 from feature_extractor import get_sliding_windows_indices, window_data
 from feature_extractor.feature_extractor import load_data
 from file_utils import create_dir, remove_file_duplicates, save_json_file, get_labels, validate_activity_input, \
     load_json_file
-from raw_data_processor import pre_process_inertial_data, slerp_smoothing
+from raw_data_processor import pre_process_inertial_data, slerp_smoothing, pre_process_sensors
 from ..data_balancer import MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING, balance_main_class, balance_sub_class, \
     balance_subject_data
 
@@ -424,7 +424,7 @@ class HARDataset(Dataset):
         loads a data sample and its corresponding main and sub-activity labels.
         :param idx: index of the file to load
         :return: Tuple containing:
-                 - torch.FloatTensor of shape [window_size, num_channels]
+                 - torch.FloatTensor of shape [time_steps, seq_len, num_channels]
                  - torch.LongTensor containing the main activity label (as integer)
                  - torch.LongTensor containing the sub-activiyt label (as integer)
         """
@@ -452,8 +452,8 @@ class HARDataset(Dataset):
         data_sample = data_sample[:, self.selected_channels]
 
         # window data into subsequences according to the provided seq_len
-        num_windows = data_sample.shape[0] // self.seq_len
-        data_sample = data_sample.reshape(num_windows, self.seq_len, data_sample.shape[-1])
+        num_time_steps = data_sample.shape[0] // self.seq_len
+        data_sample = data_sample.reshape(num_time_steps, self.seq_len, data_sample.shape[-1])
 
         return (torch.tensor(data_sample, dtype=torch.float32), torch.tensor(main_class, dtype=torch.long),
                 torch.tensor(sub_class[0], dtype=torch.long))
@@ -674,7 +674,6 @@ def generate_dataset(data_path: str, output_path: str, activities: List[str] = N
             for file_num, file in enumerate(sub_files, start=1):
 
                 # (1) load the data
-                # TODO add to file_utils.py or pipeline file
                 print(f"({file_num}.1) loading file {file_num}/{num_files}: {file}")
                 data, sensor_names = load_data(os.path.join(subject_folder_path, file))
 
@@ -682,19 +681,17 @@ def generate_dataset(data_path: str, output_path: str, activities: List[str] = N
                 data = data[:, 1:]
 
                 # (2) pre-process the data
-                # TODO: create some agnostic pipeline file that does the entire pre-processing
                 print(f"({file_num}.2) pre-processing")
-                data = _pre_process_sensors(data, sensor_names)
+                data = pre_process_sensors(data, sensor_names)
 
                 # remove impulse response
-                data = data[250:, :]
+                data = data[IMPULSE_LENGTH:, :]
 
                 # (3) add pre-processed data to list for calculating subject statistics later on
                 subject_data.append(data)
 
                 # (4) window the data
                 # (since all are of the same length it is possible to use just one sensor channel)
-                # TODO: until here (including) should be in the pipeline.py
                 print(f"({file_num}.3) windowing data")
                 indices = get_sliding_windows_indices(data[:, 0], fs=fs, window_size=window_size, overlap=overlap)
                 windowed_data = window_data(data, indices)
@@ -748,7 +745,7 @@ def generate_dataset(data_path: str, output_path: str, activities: List[str] = N
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def _get_sample_shape(data_path: str) -> int:
+def _get_sample_shape(data_path: str) -> Tuple[int, int]:
     """
     gets the number of channels contained in a sample. Needed for checking input validity.
     It is assumed that all samples in the dataset have the same shape [num_timesteps, num_channels]
@@ -781,6 +778,7 @@ def _get_sample_shape(data_path: str) -> int:
             f"The dataset does not contain any \".npy\" files. Please check the correctness of the the provided data path"
             f"\nProvided data path: {data_path}")
 
+
 def _generate_outfolder(features_data_path: str,  window_size_samples: float) -> str:
     """
     Generates the folder for storing the generated dataset
@@ -795,51 +793,6 @@ def _generate_outfolder(features_data_path: str,  window_size_samples: float) ->
     output_path = create_dir(features_data_path, os.path.join(DL_DATASET, folder_name))
 
     return output_path
-
-# TODO: define in pipeline.py (or similar) and import to this file
-def _pre_process_sensors(data_array: np.array, sensor_names: List[str], fs=100) -> np.array:
-    """
-    Pre-processes the sensors contained in data_array according to their sensor type.
-    :param data_array: the loaded data
-    :param sensor_names: the names of the sensors contained in the data array
-    :return: the processed sensor data
-    """
-
-    # make a copy to not override the original data
-    processed_data = data_array.copy()
-
-    # process each sensor
-    for valid_sensor in VALID_SENSORS:
-
-        # get the positions of the sensor in the sensor_names
-        sensor_cols = [col for col, sensor_name in enumerate(sensor_names) if valid_sensor in sensor_name]
-
-        if sensor_cols:
-
-            print(f"--> pre-processing {valid_sensor} sensor")
-            # acc pre-processing
-            if valid_sensor == ACC:
-
-                processed_data[:, sensor_cols] = pre_process_inertial_data(processed_data[:, sensor_cols], is_acc=True,
-                                                                           fs=fs)
-
-            # gyr and mag pre-processing
-            elif valid_sensor in [GYR, MAG]:
-
-                processed_data[:, sensor_cols] = pre_process_inertial_data(processed_data[:, sensor_cols], is_acc=False,
-                                                                           fs=fs)
-
-            # rotation vector pre-processing
-            else:
-
-                processed_data[:, sensor_cols] = slerp_smoothing(processed_data[:, sensor_cols], 0.3,
-                                                                 scalar_first=False,
-                                                                 return_numpy=True, return_scalar_first=False)
-        else:
-
-            print(f"The {valid_sensor} sensor is not in the loaded data. Skipping the pre-processing of this sensor.")
-
-    return processed_data
 
 
 def _save_windowed_data(windowed_data: np.array, output_path: str, subject: str, label: str, zeros_pad, num_extracted_windows) -> None:
@@ -865,7 +818,7 @@ def _save_windowed_data(windowed_data: np.array, output_path: str, subject: str,
         np.save(os.path.join(output_path, filename), window)
 
 
-def _calc_subject_stats(subject_data: List[np.array], subject_id: str) -> Dict[str, Union[int, List[int]]]:
+def _calc_subject_stats(subject_data: List[np.array], subject_id: str) -> dict[str, dict[str, int | Any]]:
     """
     Calculates a set of statistics from the data contained in subject_data. subject_data is assumed to be a 2D array
     containing the data of a sensor-axis (e.g., x_ACC, y_GYR, etc.) in each column. The statistics are calculated for

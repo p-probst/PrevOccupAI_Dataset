@@ -18,13 +18,13 @@ import torch
 import torch.nn as nn
 
 # internal imports
-from constants import LSTM, GRU
+from constants import LSTM_MODEL, GRU_MODEL
 
 # ------------------------------------------------------------------------------------------------------------------- #
 #  constants
 # ------------------------------------------------------------------------------------------------------------------- #
 
-SUPPORTED_DL_MODELS = [LSTM, GRU]
+SUPPORTED_DL_MODELS = [LSTM_MODEL, GRU_MODEL]
 
 # ------------------------------------------------------------------------------------------------------------------- #
 #  public classes
@@ -37,7 +37,7 @@ class HARRnn(nn.Module):
         (1) lstm layer
         (2) dropout layer
         (3) fully connected layer
-        The model assumes inputs of shape [batch_size, time_steps, num_features], where num features equates to the
+        The model assumes inputs of shape [batch_size, time_steps, seq_len, num_features], where num features equates to the
         number of channels (i.e. sensor channels).
         :param model_type:
         :param num_features: number of features in each timestep (input size). This equates to the number of
@@ -63,7 +63,7 @@ class HARRnn(nn.Module):
 
         # model architecture
         # check if it is a LSTM layer or a GRU layer
-        rnn_type = nn.LSTM if self.model_type == LSTM else nn.GRU
+        rnn_type = nn.LSTM if self.model_type == LSTM_MODEL else nn.GRU
         self.rnn = rnn_type(
             input_size=num_features,
             hidden_size=hidden_size,

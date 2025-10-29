@@ -2,30 +2,44 @@ import os
 import argparse
 from typing import List
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import pandas as pd
+from sklearn.metrics import accuracy_score
+
+from HAR.dl.dataset_generator import GLOBAL_STATS, SENSOR_MEAN, SENSOR_VAR
+from HAR.ml.load import load_labels_from_log
+from HAR.post_process import expand_classification
+from HAR.post_processing_optimizer import dl_optimize_post_processing
+from feature_extractor import trim_data, get_sliding_windows_indices, window_data
+from raw_data_processor.load_sensor_data import load_data_from_same_recording
 
 print(f"CUDA available: {torch.cuda.is_available()}")
 
 
 # internal imports
-from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY, VALID_SENSORS, RANDOM_SEED
+from constants import SEGMENTED_DATA_FOLDER, MAIN_ACTIVITY_LABELS, SENSOR_COLS_JSON, LOADED_SENSORS_KEY, VALID_SENSORS, \
+    RANDOM_SEED, TXT, IMPULSE_LENGTH
 from HAR.dl import generate_dataset, get_train_test_data, run_model_training, select_idle_gpu, configure_seed
 from HAR.dl import DL_DATASET
 from HAR.dl import HARRnn
 from HAR.dl.train_test import plot_performance_history
+from HAR.dl.utils import load_har_model
 from file_utils import create_dir, load_json_file
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # constants
 # ------------------------------------------------------------------------------------------------------------------- #
 GENERATE_DATASET = False
-TRAIN_TEST_MODEL = True
+TRAIN_TEST_MODEL = False
+DL_POST_PROCESSING = True
+
+DRIVE = "F"
 
 # definition of folder_path
-OUTPUT_FOLDER_PATH = 'E:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
+OUTPUT_FOLDER_PATH = f'{DRIVE}:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # argument parsing
@@ -109,6 +123,7 @@ if __name__ == '__main__':
 
         # define path json file containing the sensor columns
         numpy_columns_file = os.path.join(OUTPUT_FOLDER_PATH, SEGMENTED_DATA_FOLDER, SENSOR_COLS_JSON)
+
         # get sensor_columns
         sensor_columns = load_json_file(numpy_columns_file)[LOADED_SENSORS_KEY]
 
@@ -154,5 +169,26 @@ if __name__ == '__main__':
         # save the model history as CSV
         performance_df = pd.DataFrame(performance_history)
         performance_df.to_csv(os.path.join(model_save_path, f"{model_name}_performance.csv"))
+
+    if DL_POST_PROCESSING:
+
+        # define sensors to use
+        use_sensors = ['ACC', 'GYR']
+
+        # set path to real-world dataset
+        real_world_data_path = os.path.join(os.path.dirname(OUTPUT_FOLDER_PATH), "work_simulation", "raw_data")
+
+        # define path to model state-dict
+        model_path = f"{DRIVE}:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\dl_results\\trained_models_wsize-500_seqlen-10_batchsize-64\\nm_global\\nt_z-score\\ACC_GYR\\HARRnn_lstm_hs-256_nl-1_do-30.pt"
+
+        # define path to statistics
+        stats_path = "F:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\DL_Dataset\\w_500\\subject_statistics.json"
+
+        dl_optimize_post_processing(real_world_data_path, model_path, use_sensors, stats_path)
+
+
+
+
+
 
 

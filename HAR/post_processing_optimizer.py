@@ -31,12 +31,16 @@ import matplotlib.pyplot as plt
 from itertools import product
 from tqdm import tqdm
 
+from feature_extractor import trim_data
+from raw_data_processor import pre_process_sensors
 # internal imports
 from raw_data_processor.load_sensor_data import load_data_from_same_recording
+from .dl import select_idle_gpu, load_har_model
 from .ml.load import load_labels_from_log, load_production_model
+from .pipeline import normalize_data, dl_windowing, dl_classify
 from .post_process import majority_vote_mid, threshold_tuning, heuristics_correction, expand_classification
 from feature_extractor.feature_extractor import pre_process_signals
-from constants import TXT
+from constants import TXT, IMPULSE_LENGTH
 from file_utils import create_dir
 
 
@@ -173,6 +177,99 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
         pd.DataFrame.from_dict(subject_opt_heur_results, orient='index') \
             .to_csv(os.path.join(opt_output_path, "opt_heur_acc_results.csv"), index=True)
 
+
+def dl_optimize_post_processing(raw_data_path: str, model_path: str, use_sensors: List[str], stats_path: str = None, fs: int = 100) -> None:
+    """
+    post-processing optimizer for DL models.
+    :param raw_data_path:
+    :param model_path:
+    :param use_sensors:
+    :param stats_path:
+    :param fs:
+    :return:
+    """
+
+    # define label map
+    label_map = {'sitting': 0, 'standing': 1, 'walking': 2}
+
+    # select available gpu
+    cuda_device = select_idle_gpu()
+
+    # load the model
+    har_model, w_size, seq_len = load_har_model(model_path, use_sensors, cuda_device)
+
+    # change window size to seconds
+    w_size = int(w_size / fs)
+
+    # list all folders within the data path
+    subject_folders = os.listdir(raw_data_path)
+
+    # filter for the folders containing the subject data (subject folders start with 'S0')
+    subject_folders = [folder for folder in subject_folders if folder.startswith("S0")]
+
+    # dict for hodling results
+    results_dict = {}
+
+    # cycle over the subjects
+    for subject in subject_folders:
+        print("\n# -------------------------------------------------- #")
+        print(f"Performing post processing on subject {subject}")
+
+        # create the path to the subject folder
+        subject_folder_path = os.path.join(raw_data_path, subject)
+
+        # list all files/folders
+        folder_items = os.listdir(subject_folder_path)
+
+        # get the folder containing the sensor data
+        signals_path = [item for item in folder_items if os.path.isdir(os.path.join(subject_folder_path, item))]
+        signals_path = os.path.join(subject_folder_path, signals_path[0])
+
+        # get the file containing the activity labels
+        labels_path = [item for item in folder_items if item.endswith(TXT)]
+        labels_path = os.path.join(subject_folder_path, labels_path[0])
+
+        # load the sensor data and the label data
+        subject_data = load_data_from_same_recording(signals_path, use_sensors, fs=fs)
+
+        # convert data to numpy array (remove time column 't')
+        sensor_data = subject_data.values[:, 1:]
+
+        # get the sensor names
+        sensor_names = subject_data.columns.values[1:]
+        print(f"loaded sensors: {sensor_names}")
+
+        # pre-process the data
+        sensor_data = pre_process_sensors(sensor_data, sensor_names)
+
+        # remove impulse response
+        sensor_data = sensor_data[IMPULSE_LENGTH:, :]
+
+        # trim the data to accommodate full windowing
+        sensor_data, to_trim = trim_data(sensor_data, w_size=w_size, fs=fs)
+
+        # normalize the data
+        sensor_data = normalize_data(sensor_data, stats_path)
+
+        # window the data
+        windowed_data = dl_windowing(sensor_data, w_size, seq_len, fs)
+
+        # classify the data
+        y_pred = dl_classify(har_model, windowed_data, w_size, fs)
+
+        # load the labels
+        true_labels = load_labels_from_log(labels_path, label_map, subject_data.shape[0])
+
+        # trim the labels to the correct size
+        true_labels = true_labels[250:-to_trim]
+
+        # calculate accuracy
+        vanilla_acc = accuracy_score(true_labels, y_pred)
+
+        # update results dict
+        results_dict.update({subject: {'vanilla_acc': vanilla_acc}})
+
+    print(results_dict)
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
