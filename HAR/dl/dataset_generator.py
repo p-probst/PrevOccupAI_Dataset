@@ -462,7 +462,7 @@ class HARDataset(Dataset):
 def get_train_test_data(dataset_path : str, batch_size: int,
                         load_sensors: List[str] = None, sensor_columns: List[str] = None, seq_len: int = 1,
                         norm_method: str = None, norm_type: str = None,
-                        balancing_type: str = None) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, List[Dict[str, torch.utils.data.DataLoader]], int]:
+                        balancing_type: str = None) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, List[Dict[str, torch.utils.data.DataLoader]], int, int]:
     """
     gets the train and test data loaders
     :param dataset_path: the path to the dataset containing the data for training and testing
@@ -524,6 +524,7 @@ def get_train_test_data(dataset_path : str, batch_size: int,
     X, _, _ = train_dataset[0]
     print("Sample shape:", X.shape)
     num_channels = X.shape[-1]
+    num_timesteps = X.shape[0]
 
     # X, y_main, y_sub = train_dataset[0]
     #
@@ -566,7 +567,7 @@ def get_train_test_data(dataset_path : str, batch_size: int,
         # add the data loader to the list (pass it wrapped in a dictionary to also store the subject ID)
         test_dataloader_subjects.append({SUBJECT_ID_KEY: subject_ID_test, DATA_LOADER_KEY: subject_data_loader})
 
-    return train_dataloader, test_dataloader, test_dataloader_subjects, num_channels
+    return train_dataloader, test_dataloader, test_dataloader_subjects, num_channels, num_timesteps
 
 
 def generate_dataset(data_path: str, output_path: str, activities: List[str] = None, fs: int = 100, window_size: float = 1.5,
