@@ -7,6 +7,8 @@ import torch.nn as nn
 import torch.optim as optim
 import pandas as pd
 
+
+
 print(f"CUDA available: {torch.cuda.is_available()}")
 
 
@@ -16,6 +18,7 @@ from HAR.dl import generate_dataset, get_train_test_data, run_model_training, se
 from HAR.dl import DL_DATASET
 from HAR.dl import HARRnn
 from HAR.dl.train_test import plot_performance_history
+from HAR.post_processing_optimizer import dl_optimize_post_processing
 from file_utils import create_dir, load_json_file
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -168,11 +171,14 @@ if __name__ == '__main__':
         real_world_data_path = os.path.join(os.path.dirname(OUTPUT_FOLDER_PATH), "work_simulation", "raw_data")
 
         # define path to model state-dict
-        model_path = f"{DRIVE}:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\dl_results\\trained_models_wsize-500_seqlen-10_batchsize-64\\nm_global\\nt_z-score\\ACC_GYR\\HARRnn_lstm_hs-256_nl-1_do-30.pt"
+        # model_path = f"{DRIVE}:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\dl_results\\trained_models_wsize-500_seqlen-10_batchsize-64\\nm_global\\nt_z-score\\ACC_GYR\\HARRnn_lstm_hs-256_nl-1_do-30.pt"
+        model_path = f"{DRIVE}:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\dl_results_new\\trained_models_wsize-250_seqlen-10_batchsize-64\\nm_subject\\nt_z-score\\ACC_GYR\\HARRnn_lstm_hs-256_nl-2_do-30.pt"
 
         # define path to statistics
-        stats_path = "F:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\DL_Dataset\\w_500\\subject_statistics.json"
+        #stats_path = "F:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\DL_Dataset\\w_500\\subject_statistics.json"
+        stats_path = None
 
+        # run post-processing optimization
         dl_optimize_post_processing(real_world_data_path, model_path, use_sensors, stats_path)
 
 

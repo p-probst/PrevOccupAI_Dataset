@@ -19,7 +19,7 @@ classify(...):
 # ------------------------------------------------------------------------------------------------------------------- #
 import numpy as np
 import torch
-from typing import List
+from typing import List, Tuple
 
 from HAR.dl.dataset_generator import GLOBAL_STATS, SENSOR_MEAN, SENSOR_VAR
 from HAR.post_process import expand_classification
@@ -31,7 +31,7 @@ from raw_data_processor import pre_process_sensors, load_data_from_same_recordin
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
 # ------------------------------------------------------------------------------------------------------------------- #
-def dl_pipeline(data_path: str, har_model: torch.nn.Module, sensors: List[str], w_size: int, seq_len: int, fs=100, stats_path: str = None) -> np.array:
+def dl_pipeline(data_path: str, har_model: torch.nn.Module, sensors: List[str], w_size: int, seq_len: int, fs=100, stats_path: str = None) -> np.ndarray:
     """
     pipeline for using the DL model for HAR classification. The pipeline handles all necessary steps:
     (1) loading the data
@@ -76,12 +76,12 @@ def dl_pipeline(data_path: str, har_model: torch.nn.Module, sensors: List[str], 
     windowed_data = dl_windowing(sensor_data, w_size, seq_len, fs)
 
     # classify the data
-    y_pred = dl_classify(har_model, windowed_data, w_size, fs)
+    y_pred, _ = dl_classify(har_model, windowed_data, w_size, fs)
 
     return y_pred
 
 
-def normalize_data(sensor_data: np.array, stats_path: str = None) -> np.array:
+def normalize_data(sensor_data: np.ndarray, stats_path: str = None) -> np.ndarray:
     """
     normalizes the sensor data using either global statistics obtained from the training dataset or subject statistics
     obtained from the sensor data by applying z-score normalization. If stats_path is given, global normalization is
@@ -95,6 +95,7 @@ def normalize_data(sensor_data: np.array, stats_path: str = None) -> np.array:
 
     # check whether a path to the global statistics was provided
     if stats_path:
+        print("global normalization applied")
         # load the statistics
         stats = load_json_file(stats_path).get(GLOBAL_STATS)
 
@@ -104,6 +105,7 @@ def normalize_data(sensor_data: np.array, stats_path: str = None) -> np.array:
 
     else:
 
+        print("subject-wise normalization applied")
         # calculate mean and standard deviation directly from the sensor data
         mean = np.mean(data_copy, axis=0)
         std = np.std(data_copy, axis=0)
@@ -113,7 +115,7 @@ def normalize_data(sensor_data: np.array, stats_path: str = None) -> np.array:
 
 
 # TODO: a windowing scheme for 2D-CNN-LSTM models might be needed
-def dl_windowing(sensor_data: np.array, w_size: int, seq_len: int, fs: int = 100) -> np.array:
+def dl_windowing(sensor_data: np.ndarray, w_size: int, seq_len: int, fs: int = 100) -> np.ndarray:
     """
     windows the data into the format needed for the DL models
     :param sensor_data: numpy.array containing the sensor data needed for classification
@@ -134,13 +136,14 @@ def dl_windowing(sensor_data: np.array, w_size: int, seq_len: int, fs: int = 100
     return windowed_data
 
 
-def dl_classify(har_model: torch.nn.Module, data: np.array, w_size: int, fs:int = 100) -> np.array:
+def dl_classify(har_model: torch.nn.Module, data: np.ndarray, w_size: int, fs:int = 100, expand_classif: bool = True) -> Tuple[np.ndarray, np.ndarray]:
     """
     classifies the provided data using the provided HAR model
     :param har_model: the loaded HAR model
     :param data: the data to be classified in shape: [num_windows, time_steps, sequence_length, num_channels]
     :param w_size: the window size in seconds
     :param fs: the sampling frequency in Hz
+    :param expand_classif: whether to expand classification to the original data length or not. Default: True
     :return: numpy.array containing the classification results
     """
 
@@ -153,10 +156,14 @@ def dl_classify(har_model: torch.nn.Module, data: np.array, w_size: int, fs:int 
     # pass the output through argmax to obtain classification according to class
     y_pred = logits.argmax(dim=1).detach().numpy()
 
-    # expand the prediction to the original length of the input signal
-    y_pred = expand_classification(y_pred, w_size, fs)
+    # obtain the probabilities
+    y_probabilities = logits.softmax(dim=1).detach().numpy()
 
-    return y_pred
+    if expand_classif:
+        # expand the prediction to the original length of the input signal
+        y_pred = expand_classification(y_pred, w_size, fs)
+
+    return y_pred, y_probabilities
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions

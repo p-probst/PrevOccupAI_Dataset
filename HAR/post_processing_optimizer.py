@@ -23,6 +23,7 @@ _calculate_class_percentages(...): Calculates the percentage of each class based
 import os
 import numpy as np
 import pandas as pd
+import torch
 import tsfel
 from typing import Optional, List, Dict, Tuple
 from sklearn.ensemble import RandomForestClassifier
@@ -209,11 +210,18 @@ def dl_optimize_post_processing(raw_data_path: str, model_path: str, use_sensors
 
     # dict for hodling results
     results_dict = {}
+    param_dict = {}
+    class_percentages_dict = {}
+
+    # create folder for storing results
+    folder_dir = os.path.dirname(raw_data_path)
+    results_folder = create_dir(folder_dir, "dl_optim_results")
+    plot_folder = create_dir(results_folder, "plots")
 
     # cycle over the subjects
     for subject in subject_folders:
         print("\n# -------------------------------------------------- #")
-        print(f"Performing post processing on subject {subject}")
+        print(f"Performing post-processing optimization on subject {subject}")
 
         # create the path to the subject folder
         subject_folder_path = os.path.join(raw_data_path, subject)
@@ -254,28 +262,44 @@ def dl_optimize_post_processing(raw_data_path: str, model_path: str, use_sensors
         # window the data
         windowed_data = dl_windowing(sensor_data, w_size, seq_len, fs)
 
-        # classify the data
-        y_pred = dl_classify(har_model, windowed_data, w_size, fs)
-
         # load the labels
         true_labels = load_labels_from_log(labels_path, label_map, subject_data.shape[0])
 
         # trim the labels to the correct size
-        true_labels = true_labels[250:-to_trim]
+        true_labels = true_labels[IMPULSE_LENGTH:-to_trim]
 
-        # calculate accuracy
-        vanilla_acc = accuracy_score(true_labels, y_pred)
+        # obtain subject optimization results
+        subject_results, subject_params, subject_class_percentages = _dl_evaluate_post_processing(har_model,
+                                                                                                  windowed_data,
+                                                                                                  true_labels,
+                                                                                                  w_size, fs,
+                                                                                                  subject,
+                                                                                                  plot_folder)
 
-        # update results dict
-        results_dict.update({subject: {'vanilla_acc': vanilla_acc}})
+        # update the results dictionary
+        results_dict[subject] = subject_results
+        param_dict[subject] = subject_params
+        class_percentages_dict[subject] = subject_class_percentages
 
-    print(results_dict)
+    # transform results into data frames
+    results_df = pd.DataFrame.from_dict(results_dict, orient='index')
+    param_df = pd.DataFrame.from_dict(param_dict, orient='index')
+    class_percentages_df = pd.concat(
+        {outer_key: pd.DataFrame(inner_dict) for outer_key, inner_dict in class_percentages_dict.items()},axis=0)
+
+    # flatten the dataframe
+    class_percentages_df = class_percentages_df.reset_index()
+    class_percentages_df = class_percentages_df.rename(columns={'level_0': 'Participant', 'level_1': 'Index'})
+
+    # store the dataframes
+    results_df.to_csv(os.path.join(results_folder, "dl_optim_results.csv"), index=True)
+    param_df.to_csv(os.path.join(results_folder, "dl_optim_params.csv"), index=True)
+    class_percentages_df.to_csv(os.path.join(results_folder, "dl_optim_class_percentages.csv"))
+
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
-
-
 def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_model: RandomForestClassifier, w_size: float,
                               fs: int, nr_samples_mv: Optional[int], threshold: Optional[float], min_durations: Optional[Dict[int,int]],
                               subject_id: str) -> Tuple[Dict[str, Dict[str, float]], Optional[Dict[int, float]], Optional[Dict[float, float]], Optional[Dict[str, float]]]:
@@ -348,7 +372,7 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     if min_durations is None:
 
         # find the best combination of durations
-        best_durations, optimization_results_heur = _optimize_heuristics_parameters(y_pred, labels, w_size, fs)
+        best_durations,  optimization_results_heur = _optimize_heuristics_parameters(y_pred, labels, w_size, fs)
 
         # update value
         min_durations = best_durations
@@ -437,8 +461,70 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     return metrics_results, optimization_results_mv, optimization_results_tt, optimization_results_heur
 
 
+def _dl_evaluate_post_processing(har_model: torch.nn.Module, windowed_data: np.ndarray, true_labels: List[int] | np.ndarray, w_size: int, fs: int, subject_id: str, plots_output_path: str):
+    """
+
+    :param har_model:
+    :param windowed_data:
+    :param true_labels:
+    :param w_size:
+    :param fs:
+    :param subject_id:
+    plots_output_path:
+    :return:
+    """
+    # create dictionary to hold the results and the optimized parameters
+    subject_optim_params_dict = {}
+
+    # define the applied post-processing schemes
+    post_processing_schemes = ["vanilla", "mv", "tt", "heur", "tt_mv", "tt_heur"]
+
+    # classify the data
+    y_pred, y_probab = dl_classify(har_model, windowed_data, w_size, fs, expand_classif=False)
+
+    # optimize majority voting
+    mv_window_size, _ = _optimize_majority_voting_window(y_pred, true_labels, w_size, fs)
+
+    # optimize threshold
+    tuned_threshold, _ = _optimize_threshold(y_probab, y_pred, true_labels, 0, 1, w_size, fs)
+
+    # optimize heuristics
+    heur_durations, _ = _optimize_heuristics_parameters(y_pred, true_labels, w_size, fs)
+
+    # apply optimized post-processing and combine approaches
+    # (1) apply majority voting
+    y_pred_mv = majority_vote_mid(y_pred, mv_window_size)
+
+    # (2) apply threshold
+    y_pred_tt = threshold_tuning(y_probab, y_pred, 0, 1, tuned_threshold)
+
+    # (4) apply heuristics
+    y_pred_heur = heuristics_correction(y_pred, w_size, heur_durations)
+
+    # (3) combine threshold with majority voting
+    y_pred_tt_mv = majority_vote_mid(y_pred_tt, mv_window_size)
+
+    # (4) combine threshold with heuristics
+    y_pred_tt_heur = heuristics_correction(y_pred_tt, w_size, heur_durations)
+
+    # calculate subject metrics
+    subject_metrics_dict, class_percentages_dict, preds = _calculate_metrics([y_pred, y_pred_mv, y_pred_tt, y_pred_heur, y_pred_tt_mv, y_pred_tt_heur], true_labels, post_processing_schemes, w_size, fs)
+
+    # update param dict
+    subject_optim_params_dict.update({'mv_size': mv_window_size, 'threshold': tuned_threshold})
+    subject_optim_params_dict.update(heur_durations)
+
+    # get the accuracies in the correct order
+    accuracies = [subject_metrics_dict[f'{pp_scheme}_acc'] for pp_scheme in post_processing_schemes]
+
+    # visualize the predictions for the subject
+    _plot_all_predictions(true_labels, preds, accuracies, post_processing_schemes, w_size, subject_id, plots_output_path)
+
+    return subject_metrics_dict, subject_optim_params_dict, class_percentages_dict
+
+
 def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[int]], accuracies: List[float],
-                          post_processing_schemes: List[str], w_size: float, subject_id: str) -> None:
+                          post_processing_schemes: List[str], w_size: float, subject_id: str, plots_output_path: str=None) -> None:
     """
     Generates and saves a figure with 6 plots. The first plot corresponds to true labels over time, and the other five plots
     correspond to the vanilla models and post-processing results over time.
@@ -448,6 +534,7 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[in
     :param post_processing_schemes: list of strings pertaining to the name of the post-processing type
     :param w_size: window size in seconds
     :param subject_id: str with the subject identifier
+    :param plots_output_path: path to save the figure
     :return: None
     """
     n_preds = len(expanded_predictions)
@@ -469,15 +556,16 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[in
     # get the project path
     project_path = os.getcwd()
 
-    # generate a folder path to store the plots
-    plots_output_path = create_dir(project_path,
-                                   os.path.join("HAR", "production_models", f"{int(w_size * 100)}_w_size", "plots"))
+    if not plots_output_path:
+        # generate a folder path to store the plots
+        plots_output_path = create_dir(project_path,
+                                       os.path.join("HAR", "production_models", f"{int(w_size * 100)}_w_size", "plots"))
 
     # save plots
     plt.savefig(os.path.join(plots_output_path, f"COMMON_post_processing_results_fig_{subject_id}.png"))
 
 
-def _optimize_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labels: np.ndarray, sit_label: int,
+def _optimize_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labels: List[int] | np.ndarray, sit_label: int,
                          stand_label: int, w_size: float, fs: int) -> Tuple[float, Dict[float, float]]:
     """
     Finds the best threshold value for post-processing based on the accuracy of the threshold tuning
@@ -533,7 +621,7 @@ def _optimize_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labe
     return best_threshold, results_dict
 
 
-def _optimize_majority_voting_window(y_pred: np.ndarray, true_labels: np.ndarray, w_size: float, fs: int) -> Tuple[int, Dict[int, float]]:
+def _optimize_majority_voting_window(y_pred: np.ndarray, true_labels: List[int] | np.ndarray, w_size: float, fs: int) -> Tuple[int,  Dict[int, float]]:
 
     """
     Optimizes the window size for the majority voting post-processing method by evaluating multiple values of
@@ -678,9 +766,69 @@ def _calculate_class_percentages(label_vector: List[int]) -> Dict[int, int]:
     for label, count in zip(unique_labels, counts):
 
         # calculate the percentage
-        percentage = (count / total_labels) * 100
+        percentage = np.round((count / total_labels) * 100, 2)
 
         # save in dictionary
         results_dict[label] = percentage
 
     return results_dict
+
+
+def _calculate_metrics(y_preds: List[np.ndarray], true_labels: List[int] | np.ndarray, post_processing_schemes: List[str], w_size: float, fs: int) \
+        -> Tuple[Dict[str, float], Dict[str, Dict[int, float]], List[List[int]]]:
+    """
+    calculates metrics for all post-processing schemes: accuracy, precision, recall, f1, and class percentages
+    :param y_preds: list containing the predicted labels for each post_processing scheme
+    :param true_labels: the true labels
+    :param post_processing_schemes: list of post-processing schemes names as string. The list should be ordered in the same way as the provided predictions
+    :param w_size: window size in seconds of each prediction window
+    :param fs: the sampling frequency
+    :return: dictionary containing the calculated metrics for each post-processing scheme and a dictionary containing the calculated class percentages for each post-processing scheme
+    """
+
+    # dicts to hold the results
+    metrics_dict = {}
+    class_percentages_dict = {}
+
+    # list to hold the expanded classification (needed for visualization)
+    expanded_preds = []
+
+    # cycle over the predictions and the corresponding schemes
+    for y_pred, pp_scheme in zip(y_preds, post_processing_schemes):
+
+        # expand classification to original length
+        y_pred_expanded = expand_classification(y_pred, w_size, fs)
+
+        # save the expanded prediction
+        expanded_preds.append(y_pred_expanded)
+
+        # calculate accuracy
+        acc = np.round(accuracy_score(y_true=true_labels, y_pred=y_pred_expanded) * 100, 2)
+
+        # calculate precision
+        precision = np.round(precision_score(y_true=true_labels, y_pred=y_pred_expanded, average='weighted') * 100, 2)
+
+        # calculate recall
+        recall = np.round(recall_score(y_true=true_labels, y_pred=y_pred_expanded, average='weighted') * 100, 2)
+
+        # calculate f1-score
+        f1 = np.round(f1_score(y_true=true_labels, y_pred=y_pred_expanded, average='weighted') * 100, 2)
+
+        # calculate the class percentages
+        class_percentages = _calculate_class_percentages(y_pred_expanded)
+
+        # update the dictionaries
+        metrics_dict.update({f'{pp_scheme}_acc': acc, f'{pp_scheme}_precision': precision, f'{pp_scheme}_recall': recall, f'{pp_scheme}_f1': f1})
+        class_percentages_dict.update({f'{pp_scheme}': class_percentages})
+
+    # add the true class percentages to the dict
+    true_class_percentages = _calculate_class_percentages(true_labels)
+    class_percentages_dict['true_cp'] = true_class_percentages
+
+    return metrics_dict, class_percentages_dict, expanded_preds
+
+
+
+
+
+
