@@ -55,7 +55,7 @@ parser.add_argument('--stride_pool', nargs='+', default=[(1,2), (1,2)], type=int
 parser.add_argument('--hidden_size', default=128, type=int, help="The hidden size used in RNN models (LSTM, GRU).")
 parser.add_argument('--num_layers', default=1, type=int, help="The number of layers used in RNN models (LSTM, GRU).")
 parser.add_argument('--dropout', default=0.3, type=float, help="The dropout rate used during model training.")
-parser.add_argument('--lr', default=1e-4, type=float, help="The learning rate used during model training")
+parser.add_argument('--lr', default=1e-5, type=float, help="The learning rate used during model training")
 
 # parse the provided arguments
 parsed_args = parser.parse_args()

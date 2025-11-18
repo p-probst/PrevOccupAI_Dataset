@@ -271,7 +271,7 @@ class CNNLSTM2d(nn.Module):
 
         # model architecture
         # (1) 2D convolutional layer
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=filters[0], kernel_size=kernel_size_conv[0], stride=stride_conv[0])
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=filters[0], kernel_size=kernel_size_conv[0], stride=stride_conv[0], padding='same')
 
         # ReLU activation function
         self.relu = nn.ReLU()
@@ -280,7 +280,7 @@ class CNNLSTM2d(nn.Module):
         self.pool1 = nn.MaxPool2d(kernel_size=kernel_size_pool[0], stride=stride_pool[0])
 
         # (2) 2D convolutional layer
-        self.conv2 = nn.Conv2d(in_channels=filters[0], out_channels=filters[1], kernel_size=kernel_size_conv[1], stride=stride_conv[1])
+        self.conv2 = nn.Conv2d(in_channels=filters[0], out_channels=filters[1], kernel_size=kernel_size_conv[1], stride=stride_conv[1], padding='same')
 
         # Max pooling layer
         self.pool2 = nn.MaxPool2d(kernel_size=kernel_size_pool[1], stride=stride_pool[1])

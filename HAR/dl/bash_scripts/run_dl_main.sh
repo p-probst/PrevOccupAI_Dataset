@@ -24,6 +24,6 @@ for WIN in "${WINDOW_SIZES[@]}"; do
         ARGS+=("$SENSOR")  # append the sensor to the growing list
 
         echo "Running with window_size_s=$WIN and sensors: ${ARGS[*]}"
-        "$PYTHON" "$SCRIPT" --window_size_s "$WIN" --load_sensors "${ARGS[@]}" --model_type "lstm" --seq_len 10 --norm_method "z-score" --norm_type global --hidden_size 256 --batch_size 64
+        "$PYTHON" "$SCRIPT" --window_size_s "$WIN" --load_sensors "${ARGS[@]}" --model_type "lstm" --seq_len 10 --norm_method "z-score" --norm_type subject --hidden_size 512 --batch_size 64 --num_layers 2 --num_epochs 60
     done
 done
