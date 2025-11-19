@@ -24,10 +24,10 @@ from file_utils import create_dir, load_json_file, parse_pairs
 # constants
 # ------------------------------------------------------------------------------------------------------------------- #
 GENERATE_DATASET = False
-TRAIN_TEST_MODEL = False
+TRAIN_TEST_MODEL = True
 DL_POST_PROCESSING = True
 
-DRIVE = "F"
+DRIVE = "D"
 
 # definition of folder_path
 OUTPUT_FOLDER_PATH = f'{DRIVE}:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
@@ -50,14 +50,14 @@ parser.add_argument('--norm_type', default='subject', choices=['global', 'subjec
 parser.add_argument('--balancing_type', default='main_classes', choices=['main_classes', 'sub_classes', None], help="The balancing type (as str).")
 
 # (3) model related parameters
-parser.add_argument('--model_type', default='cnnlstm2d', type=str, help="The model to be trained", choices=['lstm', 'gru', 'cnnlstm', 'cnnlstm2d'])
+parser.add_argument('--model_type', default='cnnlstm', type=str, help="The model to be trained", choices=['lstm', 'gru', 'cnnlstm', 'cnnlstm2d'])
 parser.add_argument('--num_epochs', default=40, type=int, help="The number of epochs used in model training.")
 parser.add_argument('--batch_size', default=64, type=int, help="The batch size used in model training.")
 parser.add_argument('--filters', nargs="+", default=[64, 128], type=int, help="A list of integers with the number of filters to be used on the first and second convolutional layers of the CNN LSTM, respectively, e.g., [32, 64]")
-parser.add_argument('--kernel_size_conv', nargs='+', default=[(1,3), (3,3)], type=int, help='List of tuples regarding the kernel size for the first and second convolutional layers, respectively')
-parser.add_argument('--stride_conv', nargs='+', default=[(1,1), (1,1)], type=int, help='List of tuples regarding the stride for the first and second convolutional layers, respectively')
-parser.add_argument('--kernel_size_pool', nargs='+', default=[(1,2), (1,2)], type=int, help='List of tuples regarding the kernel size for the first and second pooling layers, respectively')
-parser.add_argument('--stride_pool', nargs='+', default=[(1,2), (1,2)], type=int, help='List of tuples regarding the stride for the first and second pooling layers, respectively')
+parser.add_argument('--kernel_size_conv', nargs='+', default=[1, 3, 3, 3], type=int, help='List of tuples regarding the kernel size for the first and second convolutional layers, respectively')
+parser.add_argument('--stride_conv', nargs='+', default=[1, 1, 1, 1], type=int, help='List of tuples regarding the stride for the first and second convolutional layers, respectively')
+parser.add_argument('--kernel_size_pool', nargs='+', default=[1, 2, 1, 2], type=int, help='List of tuples regarding the kernel size for the first and second pooling layers, respectively')
+parser.add_argument('--stride_pool', nargs='+', default=[1, 2, 1, 2], type=int, help='List of tuples regarding the stride for the first and second pooling layers, respectively')
 parser.add_argument('--hidden_size', default=128, type=int, help="The hidden size used in RNN models (LSTM, GRU).")
 parser.add_argument('--num_layers', default=1, type=int, help="The number of layers used in RNN models (LSTM, GRU).")
 parser.add_argument('--dropout', default=0.3, type=float, help="The dropout rate used during model training.")
@@ -139,6 +139,8 @@ if __name__ == '__main__':
                                 balancing_type=balancing_type))
 
         if model_type == CNN_LSTM:
+
+            # TODO add check for matching window size and sequence length establish warning
 
             # obtain the filters for the CNN
             filters = parsed_args.filters
