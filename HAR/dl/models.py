@@ -335,15 +335,19 @@ class CNNLSTM2d(nn.Module):
     def forward(self, x: torch.tensor) -> torch.tensor:
         """
         forward pass
-        :param x: input batch of size [batch_size, timesteps, sequence_length, num_features]
+        :param x: input batch of size [batch_size, timesteps, sequence_length, num_sensor_channels]
         :return: output of shape [batch_size, num_classes]
         """
 
         # get tensor dimensions
-        batch_size, timesteps, seq_len, num_features = x.size(0), x.size(1), x.size(2), x.size(3)
+        batch_size, timesteps, seq_len, num_sensor_channels = x.shape
 
-        # merge batch and timesteps dims for CNN: [batch_size * num_timesteps, num_channels = 1, num_features, sequence_length]
-        x = x.reshape(batch_size * timesteps, 1, num_features, seq_len)
+        # permute the last two dimensions to allow for convolving along the time dimension (transposing the images)
+        # [batch_size, timesteps, num_sensor_channels, sequence_length]
+        x = x.permute(0, 1, 3, 2)
+
+        # merge batch and timesteps dims for CNN: [batch_size * num_timesteps, channels_in = 1, num_sensor_channels, sequence_length]
+        x = x.reshape(batch_size * timesteps, 1, num_sensor_channels, seq_len)
 
         # pass the data through the first convolutional layer, ReLU, and max pooling
         # output shape: [batch_size, f1, height, width]
