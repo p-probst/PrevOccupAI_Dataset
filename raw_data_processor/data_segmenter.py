@@ -130,7 +130,7 @@ def generate_segmented_dataset(raw_data_path: str, segmented_data_path: str,
             else:
                 segmented_tasks = segment_activities(aligned_data, activity, fs=fs, plot_segments=plot_segment_lines)
 
-            # crop 10 seconds at the beginning and the end of each signal to ensure that
+            # crop n seconds at the beginning and the end of each signal to ensure that
             segmented_tasks = crop_segments(segmented_tasks, n_seconds=crop_n_seconds, fs=fs)
 
             if plot_cropped_tasks:

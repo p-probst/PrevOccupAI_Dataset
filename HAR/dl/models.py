@@ -26,6 +26,7 @@ from constants import LSTM_MODEL, GRU_MODEL
 # ------------------------------------------------------------------------------------------------------------------- #
 
 SUPPORTED_DL_MODELS = [LSTM_MODEL, GRU_MODEL]
+AXES_PER_IMU_SENSOR = 3
 
 # ------------------------------------------------------------------------------------------------------------------- #
 #  public classes
@@ -224,9 +225,10 @@ class CNNLSTM(nn.Module):
 
 class CNNLSTM2d(nn.Module):
 
-    def __init__(self, num_features: int, seq_len: int, filters: List[int], kernel_size_conv: List[Tuple[int, int]],
+    def __init__(self, num_sensor_channels: int, seq_len: int, filters: List[int], kernel_size_conv: List[Tuple[int, int]],
                  kernel_size_pool: List[Tuple[int, int]], stride_pool: List[Tuple[int, int]],
-                 stride_conv: List[Tuple[int, int]], hidden_size: int, num_layers: int, num_classes: int, dropout: float):
+                 stride_conv: List[Tuple[int, int]], hidden_size: int, num_layers: int, num_classes: int, dropout: float,
+                 use_modal_channels: bool = False):
         """
         2D CNN-LSTM model with the following architecture:
         (1) 2D convolutional layer
@@ -252,12 +254,16 @@ class CNNLSTM2d(nn.Module):
         :param num_layers: Number of stacked lstm layers
         :param num_classes: Number of output classes for classification
         :param dropout: Dropout rate should be between [0.0 and 1.0]
+        :param use_modal_channels: If True, CNN input uses the sensors/modalities (i.e. ACC, GYR, MAG) contained in the
+                                   input data for the channels_in dimension. It is assumed that each of the sensors is
+                                   tri-axial. This mode is only available when using the ACC, GYR, and MAG.
+                                   Using the ROT is not possible as it is four-dimensional.
         """
         # call to super class
         super().__init__()
 
         # init class variables
-        self.num_features = num_features
+        self.num_features = num_sensor_channels
         self.seq_len = seq_len
         self.filters = filters
         self.kernel_size_conv = kernel_size_conv
@@ -268,10 +274,23 @@ class CNNLSTM2d(nn.Module):
         self.num_layers = num_layers
         self.num_classes = num_classes
         self.dropout = dropout
+        self.use_modal_channels = use_modal_channels
+
+        # check the state of use_modal_channels
+        if use_modal_channels:
+
+            # calculate the number of sensors/ in_channels
+            self.in_channels = num_sensor_channels // AXES_PER_IMU_SENSOR
+            print(f"Using modal channels. Number of channels: {self.in_channels}")
+
+        else:
+
+            # set in_channels to 1
+            self.in_channels = 1
 
         # model architecture
         # (1) 2D convolutional layer
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=filters[0], kernel_size=kernel_size_conv[0], stride=stride_conv[0])
+        self.conv1 = nn.Conv2d(in_channels=self.in_channels, out_channels=filters[0], kernel_size=kernel_size_conv[0], stride=stride_conv[0])
 
         # ReLU activation function
         self.relu = nn.ReLU()
@@ -286,7 +305,7 @@ class CNNLSTM2d(nn.Module):
         self.pool2 = nn.MaxPool2d(kernel_size=kernel_size_pool[1], stride=stride_pool[1])
 
         # compute CNN output size dynamically
-        cnn_output_size = self._get_cnn_output_size(num_features=num_features, seq_len=seq_len)
+        cnn_output_size = self._get_cnn_output_size(num_features=num_sensor_channels, seq_len=seq_len)
 
         # (3) LSTM layer
         self.lstm = nn.LSTM(
@@ -315,8 +334,13 @@ class CNNLSTM2d(nn.Module):
         # disable gradients
         with torch.no_grad():
 
+            if self.in_channels > 1:
+                 num_features = AXES_PER_IMU_SENSOR
+
             # create dummy tensor that mimics a CNN input of shape: [batch, num_channels, num_features (H), seq_len (W)]
-            dummy_tensor = torch.zeros(1, 1, num_features, seq_len)
+            dummy_tensor = torch.zeros(1, self.in_channels, num_features, seq_len)
+
+
 
             # Pass the dummy tensor through the first convolutional, relu, and pooling layers
             out = self.pool1(self.relu(self.conv1(dummy_tensor)))
@@ -342,12 +366,26 @@ class CNNLSTM2d(nn.Module):
         # get tensor dimensions
         batch_size, timesteps, seq_len, num_sensor_channels = x.shape
 
-        # permute the last two dimensions to allow for convolving along the time dimension (transposing the images)
-        # [batch_size, timesteps, num_sensor_channels, sequence_length]
-        x = x.permute(0, 1, 3, 2)
+        # check whether there are more than 1 in channel for the CNN
+        if self.in_channels > 1:
 
-        # merge batch and timesteps dims for CNN: [batch_size * num_timesteps, channels_in = 1, num_sensor_channels, sequence_length]
-        x = x.reshape(batch_size * timesteps, 1, num_sensor_channels, seq_len)
+            # reshape the tensor to [batch_size, timesteps, sequence_length, in_channels, num_axes]
+            x = x.reshape(batch_size, timesteps, seq_len, self.in_channels, AXES_PER_IMU_SENSOR)
+
+            # permute tensor to [batch_size, timesteps, in_channels, AXES_PER_IMU_SENSOR, seq_len)
+            x = x.permute(0, 1, 3, 4, 2)
+
+            # reshape the tensor to [batch_size * timesteps, in_channels, AXES_PER_IMU_SENSOR, seq_len)
+            x = x.reshape(batch_size * timesteps, self.in_channels, AXES_PER_IMU_SENSOR, seq_len)
+
+        else: # in_channels = 1
+
+            # permute the last two dimensions to allow to apply convolution along the time dimension (transposing the images)
+            # [batch_size, timesteps, num_sensor_channels, sequence_length]
+            x = x.permute(0, 1, 3, 2)
+
+            # merge batch and timesteps dims for CNN: [batch_size * num_timesteps, channels_in = 1, num_sensor_channels, sequence_length]
+            x = x.reshape(batch_size * timesteps, 1, num_sensor_channels, seq_len)
 
         # pass the data through the first convolutional layer, ReLU, and max pooling
         # output shape: [batch_size, f1, height, width]

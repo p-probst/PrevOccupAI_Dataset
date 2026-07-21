@@ -25,7 +25,7 @@ from file_utils import create_dir, load_json_file, parse_pairs
 # ------------------------------------------------------------------------------------------------------------------- #
 GENERATE_DATASET = False
 TRAIN_TEST_MODEL = True
-DL_POST_PROCESSING = True
+DL_POST_PROCESSING = False
 
 DRIVE = "D"
 
@@ -43,24 +43,25 @@ parser.add_argument('--data_path', default=OUTPUT_FOLDER_PATH, help="Path to dat
 # (2) dataset
 parser.add_argument('--fs', default=100, type=int, help="The sampling frequency used during data acquisition.")
 parser.add_argument('--window_size_s', default=5, type=float, help="The window size (in seconds) for sequence windowing. Can be either int or float.")
-parser.add_argument('--seq_len', default=10, type=int, help="The window size (in samples) for sub-sequencing input samples. Should be a factor of window_size (in samples).")
-parser.add_argument('--load_sensors', nargs="+", default=None, help="The sensor to be loaded (as List[str]), e.g., [\"ACC\", \"GYR\"].")
+parser.add_argument('--seq_len', default=25, type=int, help="The window size (in samples) for sub-sequencing input samples. Should be a factor of window_size (in samples).")
+parser.add_argument('--load_sensors', nargs="+", default=["ACC", "GYR"], help="The sensor to be loaded (as List[str]), e.g., [\"ACC\", \"GYR\"].")
 parser.add_argument('--norm_method', default='z-score', choices=['z-score', 'min-max', None], help="The normalization method (as str) used.")
-parser.add_argument('--norm_type', default='subject', choices=['global', 'subject', 'window', None], help="The type of normalization (as str).")
+parser.add_argument('--norm_type', default='global', choices=['global', 'subject', 'window', None], help="The type of normalization (as str).")
 parser.add_argument('--balancing_type', default='main_classes', choices=['main_classes', 'sub_classes', None], help="The balancing type (as str).")
 
 # (3) model related parameters
-parser.add_argument('--model_type', default='cnnlstm', type=str, help="The model to be trained", choices=['lstm', 'gru', 'cnnlstm', 'cnnlstm2d'])
+parser.add_argument('--model_type', default='cnnlstm2d', type=str, help="The model to be trained", choices=['lstm', 'gru', 'cnnlstm', 'cnnlstm2d'])
 parser.add_argument('--num_epochs', default=40, type=int, help="The number of epochs used in model training.")
 parser.add_argument('--batch_size', default=64, type=int, help="The batch size used in model training.")
 parser.add_argument('--filters', nargs="+", default=[64, 128], type=int, help="A list of integers with the number of filters to be used on the first and second convolutional layers of the CNN LSTM, respectively, e.g., [32, 64]")
-parser.add_argument('--kernel_size_conv', nargs='+', default=[1, 3, 3, 3], type=int, help='List of tuples regarding the kernel size for the first and second convolutional layers, respectively')
+parser.add_argument('--kernel_size_conv', nargs='+', default=[3, 3, 1, 3], type=int, help='List of tuples regarding the kernel size for the first and second convolutional layers, respectively')
 parser.add_argument('--stride_conv', nargs='+', default=[1, 1, 1, 1], type=int, help='List of tuples regarding the stride for the first and second convolutional layers, respectively')
 parser.add_argument('--kernel_size_pool', nargs='+', default=[1, 2, 1, 2], type=int, help='List of tuples regarding the kernel size for the first and second pooling layers, respectively')
 parser.add_argument('--stride_pool', nargs='+', default=[1, 2, 1, 2], type=int, help='List of tuples regarding the stride for the first and second pooling layers, respectively')
 parser.add_argument('--hidden_size', default=128, type=int, help="The hidden size used in RNN models (LSTM, GRU).")
 parser.add_argument('--num_layers', default=1, type=int, help="The number of layers used in RNN models (LSTM, GRU).")
 parser.add_argument('--dropout', default=0.3, type=float, help="The dropout rate used during model training.")
+parser.add_argument('--use_modal_channels', default=True, type=bool, help="Whether or not to use modal channels.")
 parser.add_argument('--lr', default=1e-4, type=float, help="The learning rate used during model training")
 
 # parse the provided arguments
@@ -109,6 +110,7 @@ if __name__ == '__main__':
         hidden_size = parsed_args.hidden_size
         num_layers = parsed_args.num_layers
         dropout = parsed_args.dropout
+        use_modal_channels = parsed_args.use_modal_channels
         lr = parsed_args.lr
 
         # set the GPU
@@ -161,12 +163,12 @@ if __name__ == '__main__':
             stride_pool = parse_pairs(parsed_args.stride_pool)
 
             # set 2D CNN LSTM variables and parameters
-            har_model = CNNLSTM2d(num_features=num_channels, seq_len=seq_len, filters=filters, kernel_size_conv=kernel_size_conv,
+            har_model = CNNLSTM2d(num_sensor_channels=num_channels, seq_len=seq_len, filters=filters, kernel_size_conv=kernel_size_conv,
                                   kernel_size_pool=kernel_size_pool, stride_pool=stride_pool, stride_conv=stride_conv,
-                                  hidden_size=hidden_size, num_layers=num_layers, num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout)
+                                  hidden_size=hidden_size, num_layers=num_layers, num_classes=len(MAIN_ACTIVITY_LABELS), dropout=dropout, use_modal_channels=use_modal_channels)
 
             # set model name for the CNN-LSTM
-            model_name = f"{har_model.__class__.__name__}_1_3_fl1-{filters[0]}_fl2-{filters[1]}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(har_model.dropout * 100)}"
+            model_name = f"{har_model.__class__.__name__}_3_3_fl1-{filters[0]}_fl2-{filters[1]}_hs-{har_model.hidden_size}_nl-{har_model.num_layers}_do-{int(har_model.dropout * 100)}"
 
 
         else:

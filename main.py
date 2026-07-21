@@ -18,13 +18,14 @@ import numpy as np
 GENERATE_SEGMENTED_DATASET = False
 EXTRACT_FEATURES = False
 ML_HAR = True
-ML_MODEL_SELECTION = True
-ML_TRAIN_PRODUCTION_MODEL = True
+ML_MODEL_SELECTION = False
+ML_TRAIN_PRODUCTION_MODEL = False
 ML_POST_PROCESSING = True
+OPTIMIZE_INDIVIDUAL_PARAM = False
 
 # definition of folder_path
 RAW_DATA_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data\\raw_signals_backups\\acquisitions'
-OUTPUT_FOLDER_PATH = 'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
+OUTPUT_FOLDER_PATH = r'E:\Prevoccupai_HAR\HAR_output' #'D:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\subject_data'
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # program starts here
@@ -45,7 +46,7 @@ if __name__ == '__main__':
         segmented_data_path = os.path.join(OUTPUT_FOLDER_PATH, SEGMENTED_DATA_FOLDER)
 
         # extract features and save them to individual subject files
-        extract_features(segmented_data_path, OUTPUT_FOLDER_PATH, window_scaler='standard',
+        extract_features(segmented_data_path, OUTPUT_FOLDER_PATH, window_scaler=None,
                          default_input_file_type='.npy',
                          output_file_type='.npy')
 
@@ -72,16 +73,26 @@ if __name__ == '__main__':
         if ML_TRAIN_PRODUCTION_MODEL:
 
             print("\ntraining and evaluating production model")
-            train_production_model(feature_data_path, num_features_retain=30, balancing_type=balancing_type, norm_type='none', window_size_samples=500)
+            train_production_model(feature_data_path, num_features_retain=25, balancing_type=balancing_type, norm_type='none', window_size_samples=500)
 
         if ML_POST_PROCESSING:
 
-            raw_data_path = "G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\work_simulation\\raw_data"
+            me_dataset_path = r'E:\Prevoccupai_HAR\model_evaluation'  #"G:\\Backup PrevOccupAI data\\Prevoccupai_HAR\\work_simulation\\raw_data"
             label_map = {'sitting': 0, 'standing': 1, 'walking': 2}
-            min_durations_dict = {0: 20, 1: 30, 2: 5}
 
             print("\nPerforming post processing")
-            optimize_post_processing(raw_data_path, label_map, fs=100, w_size=5.0, min_durations=min_durations_dict, threshold=0.85, nr_samples_mv=17)
+
+            if OPTIMIZE_INDIVIDUAL_PARAM:
+                # run this to optimize the parameters for each subject individually
+                optimize_post_processing(me_dataset_path, label_map, fs=100, w_size=5.0, load_sensors=['ACC', 'GYR', 'MAG'])
+
+            else:
+
+                # set durations for heuristics
+                min_durations_dict = {0: 20, 1: 30, 2: 5}
+
+                # run this to obtain the results with the identified parameters through the individual optimization
+                optimize_post_processing(me_dataset_path , label_map, fs=100, w_size=5.0, load_sensors=['ACC', 'GYR', 'MAG'], min_durations=min_durations_dict, threshold=0.84, nr_samples_mv=17)
 
 
 

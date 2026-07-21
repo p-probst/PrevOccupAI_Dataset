@@ -78,7 +78,7 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
     subject_folders = os.listdir(raw_data_path)
 
     # get the folders that contain the subject data. Subject data folders start with 'S' (e.g., S001)
-    subject_folders = [folder for folder in subject_folders if folder.startswith('S')]
+    subject_folders = [folder for folder in subject_folders if folder.startswith('P')]
 
     # dictionary for holding the results for all subjects
     subject_predictions_dict = {}
@@ -88,7 +88,7 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
     subject_opt_tt_results = {}
     subject_opt_heur_results = {}
 
-    for subject in subject_folders:
+    for subject in sorted(subject_folders):
 
         print("\n#----------------------------------------------------------------------#")
         print(f"# Processing data for Subject {subject}")
@@ -127,11 +127,11 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
         sensor_data, true_labels = pre_process_signals(subject_data, sensor_names, w_size=w_size, fs=fs)
 
         # extract features
-        cfg = tsfel.load_json(f".\\HAR\\production_models\\{int(w_size*fs)}_w_size\\cfg_file_production_model.json")
+        cfg = tsfel.load_json(f".\\HAR\\production_models_new\\{int(w_size*fs)}_w_size\\cfg_file_production_model.json")
         features = tsfel.time_series_features_extractor(cfg, sensor_data, window_size=int(w_size*fs), fs=fs, header_names=sensor_names)
 
         # load the model
-        har_model, feature_names = load_production_model(f".\\HAR\\production_models\\{int(w_size*fs)}_w_size\\HAR_model_500.joblib")
+        har_model, feature_names = load_production_model(f".\\HAR\\production_models_new\\{int(w_size*fs)}_w_size\\HAR_model_500.joblib")
 
         # get the features that are needed fot the classifier
         features = features[feature_names]
@@ -149,9 +149,9 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
     # get the project path
     project_path = os.getcwd()
 
-    # generate a folder path to store the metrics and parameter optimization
-    metrics_output_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{int(w_size * fs)}_w_size", "metrics"))
-    opt_output_path = create_dir(project_path, os.path.join("HAR", "production_models", f"{int(w_size * fs)}_w_size", "parameter_optimization"))
+    # generate a folder path to store the metrics_individual and parameter optimization
+    metrics_output_path = create_dir(project_path, os.path.join("HAR", "production_models_new", f"{int(w_size * fs)}_w_size", "metrics"))
+    opt_output_path = create_dir(project_path, os.path.join("HAR", "production_models_new", f"{int(w_size * fs)}_w_size", "parameter_optimization"))
 
     # Save one CSV per metric
     metric_dfs = {
@@ -177,6 +177,11 @@ def optimize_post_processing(raw_data_path: str, label_map: Dict[str, int], fs: 
     if any(v is not None for v in subject_opt_heur_results.values()):
         pd.DataFrame.from_dict(subject_opt_heur_results, orient='index') \
             .to_csv(os.path.join(opt_output_path, "opt_heur_acc_results.csv"), index=True)
+
+    # print the optimized parameters
+    _get_best_parameters(pd.DataFrame.from_dict(subject_opt_mv_results, orient='index'), "majority voting", calc_mean=True)
+    _get_best_parameters(pd.DataFrame.from_dict(subject_opt_tt_results, orient='index'), "threshold tuning", calc_mean=True)
+    _get_best_parameters(pd.DataFrame.from_dict(subject_opt_heur_results, orient='index'), "heuristics",calc_mean=False)
 
 
 def dl_optimize_post_processing(raw_data_path: str, model_path: str, use_sensors: List[str], stats_path: str = None, fs: int = 100) -> None:
@@ -330,7 +335,7 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     # list for holding the lists with the predictions
     predictions = []
 
-    # lists for holding the metrics
+    # lists for holding the metrics_individual
     accuracies = []
     precisions = []
     recalls = []
@@ -351,6 +356,7 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     y_pred = har_model.predict(features)
 
     # get class probabilities
+    print('\nClassifying data...')
     y_pred_proba = har_model.predict_proba(features)
 
     if nr_samples_mv is None:
@@ -395,7 +401,7 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     # append predictions to list
     predictions += [y_pred, y_pred_mv, y_pred_tt, y_pred_heur, y_pred_tt_mv, y_pred_tt_heur]
 
-    # extend classifications and calculate the metrics
+    # extend classifications and calculate the metrics_individual
     for prediction in predictions:
 
         # expand the predictions to the size of the original signal
@@ -447,7 +453,7 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     # save results
     durations_df.to_csv(os.path.join(durations_outpath, f"COMMON_{subject_id}_class_percentages.csv"), index=True)
 
-    # save metrics results to a dictionary
+    # save metrics_individual results to a dictionary
     metrics_results = {
         "accuracy": dict(zip(post_processing_schemes, accuracies)),
         "precision": dict(zip(post_processing_schemes, precisions)),
@@ -459,6 +465,38 @@ def _evaluate_post_processing(features: np.ndarray, labels: np.ndarray, har_mode
     _plot_all_predictions(labels, expanded_predictions, accuracies, post_processing_schemes, w_size, subject_id)
 
     return metrics_results, optimization_results_mv, optimization_results_tt, optimization_results_heur
+
+
+def _get_best_parameters(df: pd.DataFrame, optim_param: str, calc_mean: bool = True):
+    """
+    prints the best parameters for each subject and calculates the mean value of the best parameters if wanted.
+    :param df: pandas.DataFrame containing the results from the post-processing optimization
+    :param optim_param: name of the post-processing parameter that was optimized
+    :param calc_mean: boolean indicating whether to calculate the mean or not
+    :return: none
+    """
+    # get the parameter which corresponds to the highest accuracy
+    best_value = df.idxmax(axis=1)
+    highest_acc = df.max(axis=1)
+
+    # Create a new DataFrame from containing only the best parameter and correspondent accuracy on two separate columns
+    summary_df = pd.DataFrame({
+        'best_value': best_value,
+        'highest_acc': highest_acc
+    })
+
+    # print the data frame
+    print(f"subject-wise optimization results for {optim_param}")
+    print(f"{summary_df}")
+
+    # calc mean
+    if calc_mean:
+        print(f"mean over all subjects for {optim_param}: {np.round(summary_df['best_value'].mean(), 2)}")
+
+
+
+
+
 
 
 def _dl_evaluate_post_processing(har_model: torch.nn.Module, windowed_data: np.ndarray, true_labels: List[int] | np.ndarray, w_size: int, fs: int, subject_id: str, plots_output_path: str):
@@ -507,7 +545,7 @@ def _dl_evaluate_post_processing(har_model: torch.nn.Module, windowed_data: np.n
     # (4) combine threshold with heuristics
     y_pred_tt_heur = heuristics_correction(y_pred_tt, w_size, heur_durations)
 
-    # calculate subject metrics
+    # calculate subject metrics_individual
     subject_metrics_dict, class_percentages_dict, preds = _calculate_metrics([y_pred, y_pred_mv, y_pred_tt, y_pred_heur, y_pred_tt_mv, y_pred_tt_heur], true_labels, post_processing_schemes, w_size, fs)
 
     # update param dict
@@ -777,13 +815,13 @@ def _calculate_class_percentages(label_vector: List[int]) -> Dict[int, int]:
 def _calculate_metrics(y_preds: List[np.ndarray], true_labels: List[int] | np.ndarray, post_processing_schemes: List[str], w_size: float, fs: int) \
         -> Tuple[Dict[str, float], Dict[str, Dict[int, float]], List[List[int]]]:
     """
-    calculates metrics for all post-processing schemes: accuracy, precision, recall, f1, and class percentages
+    calculates metrics_individual for all post-processing schemes: accuracy, precision, recall, f1, and class percentages
     :param y_preds: list containing the predicted labels for each post_processing scheme
     :param true_labels: the true labels
     :param post_processing_schemes: list of post-processing schemes names as string. The list should be ordered in the same way as the provided predictions
     :param w_size: window size in seconds of each prediction window
     :param fs: the sampling frequency
-    :return: dictionary containing the calculated metrics for each post-processing scheme and a dictionary containing the calculated class percentages for each post-processing scheme
+    :return: dictionary containing the calculated metrics_individual for each post-processing scheme and a dictionary containing the calculated class percentages for each post-processing scheme
     """
 
     # dicts to hold the results

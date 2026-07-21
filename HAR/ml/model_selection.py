@@ -24,6 +24,7 @@ import os
 import numpy as np
 import pandas as pd
 import joblib
+from typing import Tuple
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay
@@ -31,7 +32,7 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import GroupShuffleSplit
+from sklearn.model_selection import GroupShuffleSplit, PredefinedSplit
 
 # internal imports
 from .load import load_features
@@ -70,7 +71,7 @@ def perform_model_selection(data_path: str, balancing_type: str, window_size_sam
     :return: None
     """
 
-    for norm_type in ['none', 'minmax', 'standard']:
+    for norm_type in ['none']: # , 'minmax', 'standard']:
 
         print(f'norm_type: {norm_type}')
 
@@ -81,8 +82,11 @@ def perform_model_selection(data_path: str, balancing_type: str, window_size_sam
         X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data=balancing_type)
 
         # split of train and test set
-        splitter = GroupShuffleSplit(test_size=0.2, n_splits=1, random_state=RANDOM_SEED)
-        train_idx, test_idx = next(splitter.split(X, y_main, groups=subject_ids))
+        #splitter = GroupShuffleSplit(test_size=0.2, n_splits=1, random_state=RANDOM_SEED)
+        #train_idx, test_idx = next(splitter.split(X, y_main, groups=subject_ids))
+
+        # split train and test using pre-defined split
+        train_idx, test_idx = _get_data_predefined_split(subject_ids)
 
         print(f"subjects train: {subject_ids[train_idx].unique()}")
         print(f"subjects test: {subject_ids[test_idx].unique()}")
@@ -146,9 +150,12 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     # load feature, labels, and subject IDs
     X, y_main, y_sub, subject_ids = load_features(feature_data_folder, balance_data=balancing_type)
 
-    # split of train and test set
-    splitter = GroupShuffleSplit(test_size=0.2, n_splits=1, random_state=RANDOM_SEED)
-    train_idx, test_idx = next(splitter.split(X, y_main, groups=subject_ids))
+    # split of train and test set (random 80/20 split)
+    #splitter = GroupShuffleSplit(test_size=0.2, n_splits=1, random_state=RANDOM_SEED)
+    #train_idx, test_idx = next(splitter.split(X, y_main, groups=subject_ids))
+
+    # split train and test using pre-defined split
+    train_idx, test_idx = _get_data_predefined_split(subject_ids)
 
     # get train and test sets
     X_train = X.iloc[train_idx]
@@ -190,6 +197,32 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
 # ------------------------------------------------------------------------------------------------------------------- #
+def _get_data_predefined_split(subject_ids: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    performs a predefined data split. The split ensures that training set only contains subjects that are not in
+    the model development dataset to avoid bias.
+    The subjects used for testing are thus, {"P001", "P002", "P005", "P008", "P012", "P015"}.
+    :param subject_ids: pandas.Series containing all subject IDs
+    :return: Tuple containing the training and test indices for splitting the data accordingly
+    """
+
+    # pre-define test subjects
+    # these subjects appear in both the model development and model evaluation set
+    # therefore these subjects need to be excluded from training to avoid bias
+    test_subjects = {"P001", "P002", "P005", "P008", "P012", "P015"}
+
+    # build test_fold array: -1 = train, 0 = test
+    test_fold = np.array([0 if sid in test_subjects else -1 for sid in subject_ids])
+
+    # predefined split
+    splitter = PredefinedSplit(test_fold)
+
+    # retrieve indices
+    train_idx, test_idx = next(splitter.split())
+
+    return train_idx, test_idx
+
+
 def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train: pd.Series, norm_type: str,
                      window_size_samples: int) -> None:
     """
@@ -268,7 +301,7 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     project_path = os.getcwd()
 
     # generate a folder path to store the model and confusion matrix
-    out_path = create_dir(project_path, os.path.join("HAR", "ml", "production_models", f"{window_size_samples}_w_size"))
+    out_path = create_dir(project_path, os.path.join("HAR", "ml", "production_models2", f"{window_size_samples}_w_size"))
 
     # get train and test accuracy
     _test_all_subjects(model, window_size_samples, X_train, X_test, y_train, y_test, out_path)
