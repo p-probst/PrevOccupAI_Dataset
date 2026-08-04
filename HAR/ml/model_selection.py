@@ -25,6 +25,8 @@ import numpy as np
 import pandas as pd
 import joblib
 from typing import Tuple
+
+from sklearn.feature_selection import VarianceThreshold, SelectKBest, f_classif
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay
@@ -32,26 +34,15 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import GroupShuffleSplit, PredefinedSplit
+from sklearn.model_selection import  PredefinedSplit
 
 # internal imports
 from .load import load_features
 from .cross_validation import nested_cross_val, tune_production_model
-from .feature_selection import remove_low_variance, remove_highly_correlated_features, select_k_best_features
-from constants import RANDOM_SEED
+from .feature_selection import remove_low_variance, remove_highly_correlated_features, select_k_best_features, \
+    CorrelatedFeatureRemover
+from constants import RANDOM_SEED, SVM, RF, KNN, F_SELECTION_KBEST, F_SELECTION_HIGH_CORR, F_SELECTION_LOW_VAR, STD_STEP, ESTIMATOR, PARAM_GRID
 from file_utils import create_dir
-
-# ------------------------------------------------------------------------------------------------------------------- #
-# constants
-# ------------------------------------------------------------------------------------------------------------------- #
-RF = "Random Forest"
-SVM = "SVM"
-KNN = "KNN"
-
-STD_STEP = 'std'
-PARAM_GRID = 'param_grid'
-ESTIMATOR = 'estimator'
-
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # public functions
@@ -92,9 +83,9 @@ def perform_model_selection(data_path: str, balancing_type: str, window_size_sam
         print(f"subjects test: {subject_ids[test_idx].unique()}")
 
         # get train and test sets
-        X_train_all_features = X.iloc[train_idx]
+        X_train = X.iloc[train_idx]
 
-        print(f"Total number of instances for training: {X_train_all_features.shape[0]}")
+        print(f"Total number of instances for training: {X_train.shape[0]}")
 
         # get y depending on the balancing type
         if balancing_type == 'main_classes':
@@ -116,14 +107,13 @@ def perform_model_selection(data_path: str, balancing_type: str, window_size_sam
             print(f"Testing {num_features_retain} features with norm type \'{norm_type}\'...\n")
 
             # perform model agnostic feature selection
-            X_train, _ = remove_low_variance(X_train_all_features, X_test=None, threshold=0.1)
-            X_train, _ = remove_highly_correlated_features(X_train, X_test=None, threshold=0.9)
-            X_train, _ = select_k_best_features(X_train, y_train, X_test=None, k=num_features_retain)
-
-            print(f"Used features: {X_train.columns.values}")
+            #X_train, _ = remove_low_variance(X_train_all_features, X_test=None, threshold=0.1)
+            #X_train, _ = remove_highly_correlated_features(X_train, X_test=None, threshold=0.9)
+            #X_train, _ = select_k_best_features(X_train, y_train, X_test=None, k=num_features_retain)
+            #print(f"Used features: {X_train.columns.values}")
 
             # evaluate the models using main_class labels
-            _evaluate_models(X_train, y_train, subject_ids_train, norm_type=norm_type, window_size_samples=window_size_samples)
+            _evaluate_models(X_train, y_train, subject_ids_train, norm_type=norm_type, window_size_samples=window_size_samples, num_features_retain=num_features_retain)
 
 
 def train_production_model(data_path: str, num_features_retain: int, balancing_type: str, norm_type: str,
@@ -184,15 +174,15 @@ def train_production_model(data_path: str, num_features_retain: int, balancing_t
     subject_ids_test = subject_ids.iloc[test_idx]
 
     # perform model agnostic feature selection
-    X_train, X_test = remove_low_variance(X_train, X_test, threshold=0.1)
-    X_train, X_test = remove_highly_correlated_features(X_train, X_test, threshold=0.9)
-    X_train, X_test = select_k_best_features(X_train, y_train, X_test, k=num_features_retain)
+    #X_train, X_test = remove_low_variance(X_train, X_test, threshold=0.1)
+    #X_train, X_test = remove_highly_correlated_features(X_train, X_test, threshold=0.9)
+    #X_train, X_test = select_k_best_features(X_train, y_train, X_test, k=num_features_retain)
 
     print(f"Classes used: {np.unique(y_train)}")
-    print(f"Used features: {X_train.columns.values}")
+    #print(f"Used features: {X_train.columns.values}")
 
     # evaluate production model
-    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, subject_ids_test, window_size_samples, cv_splits=2)
+    _evaluate_production_model(X_train, y_train, X_test, y_test, subject_ids_train, subject_ids_test, window_size_samples, num_features_retain, cv_splits=2)
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions
@@ -224,7 +214,7 @@ def _get_data_predefined_split(subject_ids: pd.Series) -> Tuple[np.ndarray, np.n
 
 
 def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_train: pd.Series, norm_type: str,
-                     window_size_samples: int) -> None:
+                     window_size_samples: int, num_features_retain: int) -> None:
     """
     Evaluates multiple machine learning models using nested cross-validation.
 
@@ -237,21 +227,30 @@ def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_trai
     :param subject_ids_train: pandas.Series containing the subject IDs
     :param norm_type: the normalization type used on the windowed data. Can either be 'minmax', 'std', or 'none'
     :param window_size_samples: the number of samples per window. Used for creating folder and file names.
+    :param num_features_retain: the number of features to retain after feature selection
     :return: None
     """
 
+    # define feature selection pipeline
+    feature_selection_steps = [
+        (F_SELECTION_LOW_VAR, VarianceThreshold(threshold=0.1).set_output(transform="pandas")),
+        (F_SELECTION_HIGH_CORR, CorrelatedFeatureRemover(threshold=0.9)),
+        (F_SELECTION_KBEST, SelectKBest(score_func=f_classif, k=num_features_retain).set_output(transform="pandas")),
+    ]
+
+    # dictionary to hold model pipelines
     model_dict = {
 
-         KNN: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (KNN, KNeighborsClassifier(algorithm='ball_tree'))]),
+         KNN: {ESTIMATOR: Pipeline(feature_selection_steps +[(STD_STEP, StandardScaler()), (KNN, KNeighborsClassifier(algorithm='ball_tree'))]),
                PARAM_GRID: [{f'{KNN}__n_neighbors': list(range(1, 15)), f'{KNN}__p': [1, 2]}]},
 
-         SVM: {ESTIMATOR: Pipeline([(STD_STEP, StandardScaler()), (SVM, SVC(random_state=RANDOM_SEED))]), PARAM_GRID: [
+         SVM: {ESTIMATOR: Pipeline(feature_selection_steps + [(STD_STEP, StandardScaler()), (SVM, SVC(random_state=RANDOM_SEED))]), PARAM_GRID: [
              {f'{SVM}__kernel': ['rbf'], f'{SVM}__C': np.power(10., np.arange(-4, 4)),
               f'{SVM}__gamma': np.power(10., np.arange(-5, 0))},
              {f'{SVM}__kernel': ['linear'], f'{SVM}__C': np.power(10., np.arange(-4, 4))}]},
 
-         RF: {ESTIMATOR: RandomForestClassifier(random_state=RANDOM_SEED), PARAM_GRID: [
-             {"criterion": ['gini', 'entropy'], "n_estimators": [50, 100, 500, 1000], "max_depth": [2, 5, 10, 20, 30]}]}
+         RF: {ESTIMATOR: Pipeline(feature_selection_steps + [(RF, RandomForestClassifier(random_state=RANDOM_SEED))]), PARAM_GRID: [
+             {f"{RF}__criterion": ['gini', 'entropy'], f"{RF}__n_estimators": [50, 100, 500, 1000], f"{RF}__max_depth": [2, 5, 10, 20, 30]}]}
     }
 
     for model_name, param_dict in model_dict.items():
@@ -266,12 +265,12 @@ def _evaluate_models(X_train: pd.DataFrame, y_train: pd.Series, subject_ids_trai
 
         # save the results
         _save_results(info_df, estimator_name=model_name, num_classes=len(y_train.unique()),
-                      num_features=len(X_train.columns), norm_type=norm_type, window_size_samples=window_size_samples)
+                      num_features=num_features_retain, norm_type=norm_type, window_size_samples=window_size_samples)
 
 
 def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
                                X_test: pd.DataFrame, y_test: pd.Series, subject_ids_train: pd.Series,
-                               subject_ids_test: pd.Series, window_size_samples: int, cv_splits: int = 5) -> None:
+                               subject_ids_test: pd.Series, window_size_samples: int, num_features_retain: int, cv_splits: int = 5) -> None:
     """
     Performs a final hyperparameter tuning on the production model that was chosen based on the results from
     evaluate_models(...) and evaluates the model on the test data.
@@ -282,16 +281,23 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     :param subject_ids_train: pandas.Series containing the train subject IDs
     :param subject_ids_test: pandas.Series containing the test subject IDs
     :param window_size_samples: the number of samples per window. Used for creating folder and file names.
+    :param num_features_retain: the number of features to retain in the training data
     :param cv_splits: the number of cross-validation splits for the gridsearch. Default: 5
     :return: None
     """
 
     # define estimator and hyperparameters
-    estimator = RandomForestClassifier(random_state=RANDOM_SEED)
+    estimator = Pipeline([
+        (F_SELECTION_LOW_VAR, VarianceThreshold(threshold=0.1).set_output(transform="pandas")),
+        (F_SELECTION_HIGH_CORR, CorrelatedFeatureRemover(threshold=0.9)),
+        (F_SELECTION_KBEST, SelectKBest(score_func=f_classif, k=num_features_retain).set_output(transform="pandas")),
+        (RF, RandomForestClassifier(random_state=RANDOM_SEED)),
+    ])
 
-    param_grid = {"criterion": ['gini', 'entropy'],
-                  "n_estimators": [50, 100, 500, 1000],
-                  "max_depth": [2, 5, 10, 20, 30]}
+
+    param_grid = {f"{RF}__criterion": ['gini', 'entropy'],
+                  f"{RF}__n_estimators": [50, 100, 500, 1000],
+                  f"{RF}__max_depth": [2, 5, 10, 20, 30]}
 
     # perform hyperparameter tuning
     model = tune_production_model(X=X_train, y=y_train, subject_ids=subject_ids_train,
@@ -301,7 +307,7 @@ def _evaluate_production_model(X_train: pd.DataFrame, y_train: pd.Series,
     project_path = os.getcwd()
 
     # generate a folder path to store the model and confusion matrix
-    out_path = create_dir(project_path, os.path.join("HAR", "ml", "production_models2", f"{window_size_samples}_w_size"))
+    out_path = create_dir(project_path, os.path.join("HAR", "ml", "production_model", f"{window_size_samples}_w_size"))
 
     # get train and test accuracy
     _test_all_subjects(model, window_size_samples, X_train, X_test, y_train, y_test, out_path)

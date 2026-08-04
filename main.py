@@ -92,7 +92,7 @@ if __name__ == '__main__':
                 min_durations_dict = {0: 20, 1: 30, 2: 5}
 
                 # run this to obtain the results with the identified parameters through the individual optimization
-                optimize_post_processing(me_dataset_path , label_map, fs=100, w_size=5.0, load_sensors=['ACC', 'GYR', 'MAG'], min_durations=min_durations_dict, threshold=0.84, nr_samples_mv=17)
+                optimize_post_processing(me_dataset_path , label_map, fs=100, w_size=5.0, load_sensors=['ACC', 'GYR', 'MAG'], min_durations=min_durations_dict, threshold=0.85, nr_samples_mv=16)
 
 
 

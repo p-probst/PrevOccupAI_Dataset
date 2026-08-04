@@ -22,12 +22,14 @@ import os
 import numpy as np
 import pandas as pd
 from typing import Tuple, List, Dict
+
+from sklearn.pipeline import Pipeline
 from tqdm import tqdm
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 
 # internal imports
-from constants import CLASS_INSTANCES_JSON, FEATURE_COLS_KEY, NPY, SUB_LABEL_KEY, MAIN_LABEL_KEY
+from constants import CLASS_INSTANCES_JSON, FEATURE_COLS_KEY, NPY, SUB_LABEL_KEY, MAIN_LABEL_KEY, F_SELECTION_KBEST
 from file_utils import remove_file_duplicates, load_json_file
 from ..data_balancer import balance_main_class, balance_sub_class, balance_subject_data, MAIN_CLASS_BALANCING, SUB_CLASS_BALANCING
 
@@ -195,8 +197,11 @@ def load_production_model(model_path: str) -> Tuple[RandomForestClassifier, List
     :param model_path: path o the model
     :return: a tuple containing the model and the list of features used
     """
-    # load the classifier
-    har_model = joblib.load(model_path)
+    # load the pipeline
+    pipeline = joblib.load(model_path)
+
+    # get the classifier
+    har_model = pipeline.steps[-1][1]
 
     # print model name
     print(f"model: {type(har_model).__name__}")
@@ -206,7 +211,10 @@ def load_production_model(model_path: str) -> Tuple[RandomForestClassifier, List
     print(f"\nclasses: {har_model.classes_}")
 
     # get the features that the model was trained with
-    feature_names = har_model.feature_names_in_
+    selector = pipeline.named_steps[F_SELECTION_KBEST]
+    feature_names = selector.get_feature_names_out()
+
+    # get the features that the model was trained with
     print(f"\nnumber of features: {len(feature_names)}")
     print(f"features: {feature_names}")
 

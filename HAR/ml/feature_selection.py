@@ -13,7 +13,7 @@ select_k_best_features(...): Select the top k best features based on their relat
 None
 ------------------
 """
-
+from sklearn.base import BaseEstimator, TransformerMixin
 # ------------------------------------------------------------------------------------------------------------------- #
 # imports
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -116,6 +116,36 @@ def select_k_best_features(X_train, y_train, X_test: pd.DataFrame=None, k=10):
         X_test_selected = None
 
     return X_train_selected, X_test_selected
+
+
+# ------------------------------------------------------------------------------------------------------------------- #
+# classes to implement within a pipeline object
+# ------------------------------------------------------------------------------------------------------------------- #
+class CorrelatedFeatureRemover(BaseEstimator, TransformerMixin):
+    def __init__(self, threshold: float = 0.9):
+        self.threshold = threshold
+
+    def fit(self, X, y=None):
+        # Compute correlation matrix
+        corr = X.corr().abs()
+
+        # Select upper triangle of correlation matrix
+        upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+
+        # Identify features with correlation above threshold
+        self.to_drop_ = [c for c in upper.columns if any(upper[c] > self.threshold)]
+        return self
+
+    def transform(self, X):
+        # Drop correlated features
+        return X.drop(columns=self.to_drop_)
+
+    # print selected features
+    def get_feature_names_out(self, input_features=None):
+        if input_features is None:
+            input_features = self.feature_names_in_
+
+        return np.asarray([f for f in input_features if f not in self.to_drop_])
 
 # ------------------------------------------------------------------------------------------------------------------- #
 # private functions

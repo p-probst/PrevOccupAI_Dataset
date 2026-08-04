@@ -32,9 +32,10 @@ import matplotlib.pyplot as plt
 from itertools import product
 from tqdm import tqdm
 
+
+# internal imports
 from feature_extractor import trim_data
 from raw_data_processor import pre_process_sensors
-# internal imports
 from raw_data_processor.load_sensor_data import load_data_from_same_recording
 from .dl import select_idle_gpu, load_har_model
 from .ml.load import load_labels_from_log, load_production_model
@@ -597,10 +598,10 @@ def _plot_all_predictions(labels: np.ndarray, expanded_predictions: List[List[in
     if not plots_output_path:
         # generate a folder path to store the plots
         plots_output_path = create_dir(project_path,
-                                       os.path.join("HAR", "production_models", f"{int(w_size * 100)}_w_size", "plots"))
+                                       os.path.join("HAR", "production_models_new", f"{int(w_size * 100)}_w_size", "plots"))
 
     # save plots
-    plt.savefig(os.path.join(plots_output_path, f"COMMON_post_processing_results_fig_{subject_id}.png"))
+    plt.savefig(os.path.join(plots_output_path, f"COMMON_post_processing_results_fig_{subject_id}.svg"))
 
 
 def _optimize_threshold(probabilities: np.ndarray, y_pred: np.ndarray, true_labels: List[int] | np.ndarray, sit_label: int,

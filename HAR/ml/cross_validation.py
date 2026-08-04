@@ -22,7 +22,7 @@ from sklearn.model_selection import GroupKFold, GridSearchCV
 from sklearn.metrics import accuracy_score
 from typing import Dict, Any, List, Union
 
-from constants import RANDOM_SEED
+from constants import RANDOM_SEED, F_SELECTION_KBEST
 
 
 # ------------------------------------------------------------------------------------------------------------------- #
@@ -30,7 +30,7 @@ from constants import RANDOM_SEED
 # ------------------------------------------------------------------------------------------------------------------- #
 def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, estimator: ClassifierMixin,
                      param_grid: Union[List[Dict[str, Any]], Dict[str, Any]],
-                     splits_outer: int = 5, splits_inner: int = 2) -> pd.DataFrame():
+                     splits_outer: int = 5, splits_inner: int = 2) -> pd.DataFrame:
     """
     Performs nested cross-validation using GroupKFold to evaluate a machine learning model with hyperparameter tuning.
 
@@ -80,6 +80,10 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
         # run inner loop for hyperparameter optimization
         grid_search.fit(X_train, y_train, groups=subject_ids_inner_cv)
 
+        # get selected features
+        selector = grid_search.best_estimator_.named_steps[F_SELECTION_KBEST]
+        selected_features = selector.get_feature_names_out()
+
         # test the best estimator on the validation set of the current fold (this is possible as refit=True)
         y_pred = grid_search.best_estimator_.predict(X_val)
         fold_acc = accuracy_score(y_val, y_pred) * 100
@@ -92,6 +96,8 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
         print(f'\nResults of fold {fold_num}/{splits_outer}')
         print(f'best accuracy (inner fold avg.): {inner_acc:.2f} %')
         print(f'best params: {best_params}')
+        print(f'selected features ({len(selected_features)}):')
+        print(selected_features)
         print(f'--> fold accuracy: {fold_acc:.2f} %')
         print('-------------------------')
 
@@ -99,7 +105,7 @@ def nested_cross_val(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series, esti
         fold_scores.append(fold_acc)
 
         # append the info for the fold
-        best_params.update({'inner_acc': inner_acc, 'fold_acc': fold_acc})
+        best_params.update({'inner_acc': inner_acc, 'fold_acc': fold_acc, 'num_features': len(selected_features)})
         fold_info.append(best_params)
 
     # calculate the average accuracy over all outer folds
@@ -144,10 +150,16 @@ def tune_production_model(X: pd.DataFrame, y: pd.Series, subject_ids: pd.Series,
     # perform hyperparameter tuning
     grid_search.fit(X, y, groups=subject_ids)
 
+    # get selected features
+    selector = grid_search.best_estimator_.named_steps[F_SELECTION_KBEST]
+    selected_features = selector.get_feature_names_out()
+
     # print the results
     print("\nResults of hyperparameter tuning")
     print(f"best score (CV avg.): {grid_search.best_score_ * 100}")
     print(f"best parameters: {grid_search.best_params_}")
+    print(f'selected features ({len(selected_features)}):')
+    print(selected_features)
     print('-------------------------')
 
     return grid_search.best_estimator_
